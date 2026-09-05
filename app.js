@@ -1,0 +1,637 @@
+/* BPC Charting Assistant — runs entirely in the browser.
+   Nothing here is sent anywhere. The note lives in memory until it is copied
+   into Jane, and disappears when the tab closes.
+
+   Numbers are never filled in automatically. Every measurement lands as ___. */
+
+(function () {
+  const V = window.VOCAB;
+  const BLANK = V.BLANK;
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- state ----------
+  const S = {
+    format: "SOAP with treatment",
+    region: V.REGIONS[0],
+    fields: {},
+    lang: "th-TH",
+    auto: {},           // lines that auto-fill put into each field, so it can retract them
+    regionManual: false, // true once the physio picks a region themselves
+  };
+  const val = (name) => S.fields[name] || "";
+
+  // ---------- transcript matching (detect.js knows the Thai and English words) ----------
+  function orderByTranscript(terms) {
+    const tr = $("transcript").value || "";
+    if (!tr.trim()) return { ordered: terms, heard: new Set() };
+    const heard = DETECT.hits(terms, tr);
+    return { ordered: [...terms.filter((t) => heard.has(t)), ...terms.filter((t) => !heard.has(t))], heard };
+  }
+  const UNIT = "(?:°|degrees?|องศา|cm|centimet(?:er|re)s?|ซม|mm|kg|กก|m?hz|mhz|hz|watt/?cm2|w/?cm2|watts?|j/?cm2|bar|min(?:ute)?s?|นาที|sets?|reps?|ครั้ง|เซ็ต|/10)";
+  function numbersHeard(text) {
+    const re = new RegExp("(\\d+(?:[.,]\\d+)?)\\s*(" + UNIT + ")(?![a-z])", "gi");
+    const out = [], seen = new Set(); let m;
+    while ((m = re.exec(text))) {
+      const v = (m[1] + " " + m[2]).trim();
+      const ctx = text.slice(Math.max(0, m.index - 45), Math.min(text.length, m.index + m[0].length + 45)).replace(/\s+/g, " ");
+      const k = v.toLowerCase() + ctx.slice(0, 30);
+      if (seen.has(k)) continue; seen.add(k); out.push([v, ctx]);
+    }
+    return out;
+  }
+
+  // ---------- line builders (clinic notation) ----------
+  const romLine = (m) => `${m}; Rt. ${BLANK}°/${BLANK}°/${BLANK}° Lt. ${BLANK}°/${BLANK}°/${BLANK}°`;
+  const circLine = () => `Circumference ${BLANK}; Rt. ${BLANK} cm, Lt. ${BLANK} cm`;
+  const forceLine = (m) => `${m}; Max force Rt. ${BLANK} N, Lt. ${BLANK} N`;
+  const vasLine = () => `VAS ${BLANK}/10`;
+  const testLine = (n) => `${n}: ${BLANK}ve`;
+  const palpLine = (f, m, s) => `${f} at ${s ? s + " " : ""}${m} m.`;
+  const exLine = (e, d) => `${e} — ${d || BLANK}`;
+
+  // ---------- append / remove ----------
+  const HEADINGS = new Set(["Observation", "Palpation", "Active range of motions", "Passive range of motions",
+    "Accessory movement", "Muscle power", "Functional test", "PAIVMS", "Special test", "Neurological examination", "Myotome", "Exercise"]);
+  function updateTa(field) {
+    const ta = document.querySelector(`textarea[data-field="${CSS.escape(field)}"]`);
+    if (ta) { ta.value = S.fields[field] || ""; ta.scrollTop = ta.scrollHeight; }
+  }
+  function append(field, item, heading, silent) {
+    let cur = val(field).replace(/\s+$/, "");
+    if (heading) {
+      const lines = cur.split("\n");
+      const at = lines.findIndex((l) => l.trim() === heading && !l.startsWith(" "));
+      if (at < 0) { cur = (cur ? cur + "\n\n" : "") + heading + "\n  " + item; }
+      else {
+        let end = at + 1; while (end < lines.length && lines[end].startsWith("  ")) end++;
+        lines.splice(end, 0, "  " + item); cur = lines.join("\n");
+      }
+    } else {
+      cur = (cur ? cur + "\n" : "") + item;
+    }
+    S.fields[field] = cur.replace(/^\n+/, "");
+    updateTa(field);
+    if (!silent) renderOutput();
+  }
+  const hasLine = (field, item) => val(field).split("\n").some((l) => l.trim() === item.trim());
+  function removeLine(field, item) {
+    const lines = val(field).split("\n");
+    const idx = lines.findIndex((l) => l.trim() === item.trim()); if (idx < 0) return;
+    lines.splice(idx, 1);
+    const kept = [];
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (HEADINGS.has(l.trim()) && !l.startsWith(" ")) {
+        const next = lines.slice(i + 1).find((x) => x.trim() !== "");
+        if (!next || !next.startsWith("  ")) continue; // heading with nothing under it
+      }
+      kept.push(l);
+    }
+    S.fields[field] = kept.join("\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\n+$/g, "");
+    updateTa(field);
+  }
+
+  // ---------- auto-fill from the notes box ----------
+  // Where each detected line goes, per form. sec -> [field, keepHeading]
+  function target(sec, heading) {
+    const f = S.format;
+    if (f === "SOAP with treatment") {
+      if (sec === "problem") return null;
+      return [{ subjective: "Subjective", objective: "Objective", analysis: "Analysis", plan: "Plan", treatment: "Treatment", exercise: "Treatment" }[sec], heading];
+    }
+    if (f === "New patient's record") {
+      if (sec === "objective") {
+        const map = { "Observation": "Observation", "Palpation": "Palpation", "Accessory movement": "Palpation",
+          "Active range of motions": "Active range of motions", "Passive range of motions": "Passive range of motions",
+          "Muscle power": "Muscle power", "Functional test": "Functional test", "Special test": "Special test",
+          "Neurological examination": "Neurological examination", "Myotome": "Neurological examination", "PAIVMS": "PAIVMS" };
+        return heading ? [map[heading] || "Observation", ""] : ["Pain scale", ""];
+      }
+      return { subjective: ["Chief complaint", ""], analysis: ["Diagnosis", ""], plan: null, treatment: ["Treatment", ""], exercise: ["Treatment", "Exercise"], problem: ["Problem list", ""] }[sec];
+    }
+    if (f === "Physiotherapy Report") {
+      return { subjective: ["Chief Complaint", ""], objective: ["Physical Examinations", heading], analysis: ["Diagnosis", ""], plan: ["Recommendation", ""],
+        treatment: ["Physiotherapy Treatments", ""], exercise: ["Physiotherapy Treatments", "Exercise"], problem: null }[sec];
+    }
+    return { subjective: ["Chief complaint", ""], objective: ["Physical examinations", heading], analysis: ["Diagnosis", ""], plan: ["Physician's recommendations", ""],
+      treatment: ["Treatments", ""], exercise: ["Treatments", "Exercise"], problem: null }[sec];
+  }
+  function autoFill() {
+    const text = $("transcript").value || "";
+    const res = DETECT.run(text, S.region);
+    if (res.region && !S.regionManual && res.region !== S.region) { S.region = res.region; $("region").value = res.region; renderBuilder(); }
+    if (res.tt && !$("tt").value.trim()) $("tt").value = res.tt;
+    const wanted = {};
+    res.lines.forEach((l) => {
+      const t = target(l.sec, l.heading); if (!t || !t[0]) return;
+      let line = l.line;
+      if (S.format === "New patient's record" && t[0] === "Pain scale") line = res.vas || line;
+      (wanted[t[0]] = wanted[t[0]] || []).push({ heading: t[1] || "", line });
+    });
+    const key = (x) => x.heading + "" + x.line;
+    let count = 0;
+    new Set([...Object.keys(S.auto), ...Object.keys(wanted)]).forEach((field) => {
+      const prev = S.auto[field] || [], next = wanted[field] || [];
+      const nextKeys = new Set(next.map(key)), prevKeys = new Set(prev.map(key));
+      prev.filter((p) => !nextKeys.has(key(p))).forEach((p) => removeLine(field, p.line));
+      next.filter((w) => !prevKeys.has(key(w))).forEach((w) => { if (!hasLine(field, w.line)) append(field, w.line, w.heading, true); });
+      S.auto[field] = next; count += next.length;
+    });
+    renderOutput(); scheduleSuggest();
+    const st = $("fillstate");
+    if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.` : "Nothing recognised yet — keep going, or use the options in section 2.";
+    return count;
+  }
+  let fillT; const scheduleFill = () => { clearTimeout(fillT); fillT = setTimeout(autoFill, 350); };
+
+  // ---------- start from the last note (follow-up visits) ----------
+  // Jane renders an entry as label lines ("Subjective", "Objective", …) each
+  // followed by its text; copied text may also carry "Label: text". Any form's
+  // labels are understood and mapped onto the form being written now.
+  const SEC_OF = { "subjective": "subjective", "chief complaint": "subjective", "objective": "objective", "physical examinations": "objective",
+    "physical examination": "objective", "assessment": "analysis", "analysis": "analysis", "diagnosis": "analysis", "plan": "plan",
+    "recommendation": "plan", "recommendations": "plan", "physician's recommendations": "plan", "treatment": "treatment", "treatments": "treatment",
+    "physiotherapy treatments": "treatment", "physiotherapy treatment": "treatment" };
+  const SUB_LABELS = ["Present history", "Past history", "Pain scale", "Observation", "Palpation", "Active range of motions", "Active range of motion",
+    "Passive range of motions", "Passive range of motion", "Muscle power", "PAIVMS", "Functional test", "Special test", "Neurological examination", "Problem list", "Exercise"];
+  const SKIP_LABELS = /^(physiotherapist'?s? (name|signature)|signature|physiotherapy report|soap.*|chart entry options|signed|survey)/i;
+  const NOISE = /^(viewable by |amend title|close$|duplicate$|\w+ \d{1,2}, \d{4} – )/i;
+  const SEC_FIELD = {
+    "SOAP with treatment": { subjective: "Subjective", objective: "Objective", analysis: "Analysis", plan: "Plan", treatment: "Treatment" },
+    "Physiotherapy Report": { subjective: "Chief Complaint", objective: "Physical Examinations", analysis: "Diagnosis", plan: "Recommendation", treatment: "Physiotherapy Treatments" },
+    "New patient's record": { subjective: "Chief complaint", objective: "Observation", analysis: "Diagnosis", plan: "Treatment", treatment: "Treatment" },
+  };
+  function parseLastNote(text) {
+    const fmtFields = V.OUTPUT_FORMATS[S.format];
+    const fieldByLower = Object.fromEntries(fmtFields.map((f) => [f.toLowerCase(), f]));
+    const subByLower = Object.fromEntries(SUB_LABELS.map((f) => [f.toLowerCase(), f]));
+    const out = {}; let cur = null;
+    const put = (field, line) => { if (!field) return; out[field] = (out[field] ? out[field] + "\n" : "") + line; };
+    const fieldFor = (sec) => (SEC_FIELD[S.format] || SEC_FIELD["SOAP with treatment"])[sec];
+    text.split(/\r?\n/).forEach((raw) => {
+      let line = raw.replace(/\s+$/, ""); if (!line.trim()) { if (cur) put(cur, ""); return; } if (NOISE.test(line.trim())) return;
+      const m = line.trim().match(/^([A-Za-z' ]{3,60}?)\s*\*?\s*(?::\s*(.*))?$/);
+      const key = m ? m[1].trim().toLowerCase().replace(/\*$/, "") : "";
+      if (key && SKIP_LABELS.test(key)) { cur = null; return; }
+      if (key && (SEC_OF[key] || fieldByLower[key] || subByLower[key])) {
+        if (fieldByLower[key]) cur = fieldByLower[key];
+        else if (SEC_OF[key]) cur = fieldFor(SEC_OF[key]);
+        else { // a sub-heading (Observation, Palpation…) inside another form: keep it as a heading line in the objective box
+          const objField = fieldFor("objective"); if (cur !== objField) cur = objField; put(cur, subByLower[key]); return;
+        }
+        if (m[2] && m[2].trim()) put(cur, m[2].trim());
+        return;
+      }
+      if (!cur) return;
+      put(cur, /^\s/.test(raw) ? raw.replace(/^\s{3,}/, "  ") : line.trim());
+    });
+    return out;
+  }
+  function useLastNote() {
+    const text = $("lastnote").value || ""; if (!text.trim()) { $("laststate").textContent = ""; return; }
+    const parsed = parseLastNote(text);
+    let tt = "", suffix = "";
+    Object.keys(parsed).forEach((f) => {
+      parsed[f] = parsed[f].split("\n").filter((l) => {
+        const m = l.match(/^\*?\s*treatment times?\s*:?\s*(\d+)\s*(\([^)]*\))?/i);
+        if (m) { tt = String(+m[1] + 1); suffix = m[2] || ""; return false; }
+        return true;
+      }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    });
+    const filled = Object.keys(parsed).filter((f) => parsed[f]);
+    if (!filled.length) { $("laststate").textContent = "No section headings found — paste the whole entry as Jane shows it (Subjective, Objective, …)."; return; }
+    filled.forEach((f) => { S.fields[f] = parsed[f]; });
+    S.auto = {}; S.ttSuffix = suffix;
+    if (tt) $("tt").value = tt;
+    renderBuilder(); renderOutput(); autoFill();
+    $("laststate").textContent = `${filled.length} section${filled.length > 1 ? "s" : ""} filled from the last note` + (tt ? `, treatment times set to ${tt}` : "") + ". Change what is different today — for example the numbers, post-treatment result and any new finding.";
+    toast("Filled from the last note");
+  }
+
+  // ---------- chip rendering ----------
+  function chips(terms, field, heading, transform) {
+    const wrap = document.createElement("div"); wrap.className = "chips";
+    const { ordered, heard } = orderByTranscript(terms);
+    ordered.forEach((t) => {
+      const b = document.createElement("button"); b.type = "button";
+      b.className = "chip" + (heard.has(t) ? " heard" : ""); b.textContent = t;
+      if (heard.has(t)) b.title = "Heard in the transcript";
+      b.onclick = () => append(field, transform ? transform(t) : t, heading);
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+  function details(title, open) {
+    const d = document.createElement("details"); if (open) d.open = true;
+    const s = document.createElement("summary"); s.textContent = title; d.appendChild(s);
+    const body = document.createElement("div"); body.className = "body"; d.appendChild(body);
+    return [d, body];
+  }
+  const sub = (t) => { const p = document.createElement("p"); p.className = "sub"; p.textContent = t; return p; };
+  function selectEl(opts, onchange, id) {
+    const s = document.createElement("select"); if (id) s.id = id;
+    opts.forEach((o) => { const op = document.createElement("option"); op.value = o; op.textContent = o || "—"; s.appendChild(op); });
+    s.onchange = onchange; return s;
+  }
+
+  // ---------- field textarea ----------
+  function fieldBox(name, rows, placeholder, withMic) {
+    const w = document.createElement("div"); w.className = "fld";
+    const head = document.createElement("div"); head.className = "head";
+    const b = document.createElement("b"); b.textContent = name; head.appendChild(b);
+    if (withMic) {
+      const m = document.createElement("button"); m.type = "button"; m.className = "mic";
+      m.textContent = "🎙 Dictate"; m.dataset.target = "f:" + name; head.appendChild(m);
+      wireMic(m);
+    }
+    w.appendChild(head);
+    const ta = document.createElement("textarea"); ta.rows = rows; ta.placeholder = placeholder || "";
+    ta.dataset.field = name; ta.value = val(name);
+    ta.oninput = () => { S.fields[name] = ta.value; renderOutput(); if (/^(Analysis|Diagnosis)$/.test(name)) scheduleSuggest(); };
+    w.appendChild(ta);
+    const sg = document.createElement("div"); sg.className = "sugg"; sg.dataset.for = name; w.appendChild(sg);
+    return w;
+  }
+
+  // ---------- what BPC physios usually write for this condition ----------
+  // suggest.js (built from the clinic's own charts, phrases seen in 3+ charts
+  // only) maps a normalised diagnosis to the most common lines per box.
+  const SG = window.SUGGEST || null;
+  const EQUIV = { "Subjective": ["Subjective", "Chief Complaint", "Chief complaint"], "Chief Complaint": ["Chief Complaint", "Chief complaint", "Subjective"], "Chief complaint": ["Chief complaint", "Chief Complaint", "Subjective"],
+    "Objective": ["Objective", "Physical Examinations"], "Physical Examinations": ["Physical Examinations", "Objective"],
+    "Analysis": ["Analysis", "Diagnosis"], "Diagnosis": ["Diagnosis", "Analysis"], "Plan": ["Plan", "Recommendation"], "Recommendation": ["Recommendation", "Plan"],
+    "Treatment": ["Treatment", "Physiotherapy Treatments"], "Physiotherapy Treatments": ["Physiotherapy Treatments", "Treatment"] };
+  const dxNorm = (t) => String(t || "").split("\n").map((x) => x.trim()).filter(Boolean)[0] ? String(t).split("\n").map((x) => x.trim()).filter(Boolean)[0].toLowerCase()
+    .replace(/\b(dx\.?|diagnosis|impression|rt\.?|lt\.?|right|left|both|bilateral|side)\b/g, " ").replace(/[^a-z0-9฀-๿ ()\/+-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 70) : "";
+  function currentCondition() {
+    const f = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
+    return dxNorm(S.condition || val(f) || "");
+  }
+  function findCondition(q) {
+    if (!SG || !q) return null;
+    // try the name as typed, without its bracket, and the bracket's own contents ("(MPS)")
+    const forms = [q, q.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim()];
+    const inside = q.match(/\(([^)]+)\)/); if (inside) forms.push(inside[1].trim());
+    const AL = SG.aliases || {}; forms.slice().forEach((f) => { if (AL[f]) forms.push(AL[f]); });
+    let best = null;
+    const consider = (k, v) => { if (!best || v.n > best[1].n) best = [k, v]; };
+    forms.filter(Boolean).forEach((f) => { if (SG.conditions[f]) consider(f, SG.conditions[f]); });
+    if (best) return best;
+    Object.entries(SG.conditions).forEach(([k, v]) => {
+      forms.forEach((f) => {
+        if (!f) return;
+        if (k.includes(f) || f.includes(k) || (f.length > 8 && k.split(" ").filter((w) => w.length > 3).every((w) => f.includes(w)))) consider(k, v);
+      });
+    });
+    return best;
+  }
+  function renderSuggest() {
+    if (!SG) return;
+    const q = currentCondition(); const hit = findCondition(q);
+    document.querySelectorAll(".sugg").forEach((box) => {
+      box.innerHTML = ""; const field = box.dataset.for;
+      const labels = EQUIV[field] || [field];
+      let lines = [], source = "";
+      if (hit) { for (const l of labels) { if (hit[1].s[l] && hit[1].s[l].length) { lines = hit[1].s[l]; source = hit[0]; break; } } }
+      if (!lines.length) { for (const l of labels) { if (SG.global[l] && SG.global[l].length) { lines = SG.global[l]; break; } } }
+      if (!lines.length) return;
+      const shown = lines.filter(([line]) => !hasLine(field, line)).slice(0, 8);
+      if (!shown.length) return;
+      const p = document.createElement("p"); p.className = "sub";
+      p.textContent = source ? `Physios usually write here for “${source}” (${hit[1].n} charts) — tap to add` : "Most common lines in this box — tap to add";
+      box.appendChild(p);
+      const wrap = document.createElement("div"); wrap.className = "chips";
+      shown.forEach(([line]) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip sg"; b.textContent = line; b.onclick = () => { append(field, line, ""); renderSuggest(); }; wrap.appendChild(b); });
+      box.appendChild(wrap);
+    });
+  }
+  let sgT; const scheduleSuggest = () => { clearTimeout(sgT); sgT = setTimeout(renderSuggest, 250); };
+
+  // ---------- builder ----------
+  function objectiveExtras(host, field) {
+    const region = S.region;
+    let [d, b] = details("Observation");
+    b.appendChild(chips([...V.OBSERVATION, ...(V.OBSERVATION_BY_REGION[region] || [])], field, "Observation")); host.appendChild(d);
+
+    [d, b] = details("Palpation — finding, side, muscle");
+    let finding = V.PALPATION_FINDINGS[0], side = "", group = Object.keys(V.MUSCLES)[0];
+    const row = document.createElement("div"); row.className = "row3";
+    const musWrap = document.createElement("div");
+    const redraw = () => { musWrap.innerHTML = ""; musWrap.appendChild(chips(V.MUSCLES[group], field, "Palpation", (m) => palpLine(finding, m, side))); };
+    row.appendChild(selectEl(V.PALPATION_FINDINGS, (e) => { finding = e.target.value; redraw(); }));
+    row.appendChild(selectEl(["", ...V.SIDES], (e) => { side = e.target.value; redraw(); }));
+    row.appendChild(selectEl(Object.keys(V.MUSCLES), (e) => { group = e.target.value; redraw(); }));
+    b.appendChild(row); b.appendChild(musWrap); redraw();
+    if (V.PALPATION_NORMALS) { b.appendChild(sub("Nothing found")); b.appendChild(chips(V.PALPATION_NORMALS, field, "Palpation")); }
+    const circ = document.createElement("button"); circ.type = "button"; circ.className = "chip"; circ.textContent = "+ Circumference line";
+    circ.onclick = () => append(field, circLine(), "Palpation"); b.appendChild(circ);
+    host.appendChild(d);
+
+    [d, b] = details("Range of motion");
+    const moves = V.ROM_BY_REGION[region] || V.ROM_GENERAL;
+    const r2 = document.createElement("div"); r2.className = "row2";
+    const c1 = document.createElement("div"); c1.appendChild(sub("Active")); c1.appendChild(chips(moves, field, "Active range of motions", romLine));
+    const c2 = document.createElement("div"); c2.appendChild(sub("Passive")); c2.appendChild(chips(moves, field, "Passive range of motions", romLine));
+    r2.appendChild(c1); r2.appendChild(c2); b.appendChild(r2);
+    b.appendChild(sub("In words instead")); b.appendChild(chips(V.ROM_QUALIFIERS, field, "Active range of motions"));
+    if (V.ACCESSORY_BY_REGION[region]) { b.appendChild(sub("Accessory movement")); b.appendChild(chips(V.ACCESSORY_BY_REGION[region], field, "Accessory movement")); }
+    host.appendChild(d);
+
+    [d, b] = details("Muscle power & function");
+    b.appendChild(chips(V.STRENGTH, field, "Muscle power"));
+    b.appendChild(sub("Dynamometer force")); b.appendChild(chips(moves, field, "Muscle power", forceLine));
+    b.appendChild(chips(V.FUNCTIONAL_BY_REGION[region] || V.FUNCTIONAL, field, "Functional test"));
+    b.appendChild(sub("Overhead squat")); b.appendChild(chips(V.OVERHEAD_SQUAT, field, "Functional test"));
+    b.appendChild(chips(V.PAIVMS, field, "PAIVMS"));
+    host.appendChild(d);
+
+    [d, b] = details("Special tests & neurological");
+    b.appendChild(chips(V.SPECIAL_TESTS, field, "Special test", testLine));
+    b.appendChild(chips(V.NEURO_PHRASES, field, "Neurological examination"));
+    b.appendChild(chips(V.MYOTOMES, field, "Myotome"));
+    host.appendChild(d);
+
+    [d, b] = details("Pain score");
+    const vas = document.createElement("button"); vas.type = "button"; vas.className = "chip"; vas.textContent = "+ VAS ___/10";
+    vas.onclick = () => append(field, vasLine(), ""); b.appendChild(vas); host.appendChild(d);
+  }
+
+  function treatmentExtras(host, field) {
+    let [d, b] = details("Modality — only what BPC has", true);
+    const names = Object.keys(V.TREATMENT_MODALITIES);
+    b.appendChild(chips(names, field, "", (n) => V.TREATMENT_MODALITIES[n])); host.appendChild(d);
+
+    [d, b] = details("Exercise");
+    let group = Object.keys(V.EXERCISES)[0], dose = V.EX_DOSAGE[0];
+    const row = document.createElement("div"); row.className = "row2";
+    const exWrap = document.createElement("div");
+    const redraw = () => { exWrap.innerHTML = ""; exWrap.appendChild(chips(V.EXERCISES[group], field, "Exercise", (e) => exLine(e, dose))); };
+    row.appendChild(selectEl(Object.keys(V.EXERCISES), (e) => { group = e.target.value; redraw(); }));
+    row.appendChild(selectEl(V.EX_DOSAGE, (e) => { dose = e.target.value; redraw(); }));
+    b.appendChild(row); b.appendChild(exWrap); redraw(); host.appendChild(d);
+
+    [d, b] = details("Session & position");
+    b.appendChild(chips(V.SESSION_LENGTHS, field, "")); b.appendChild(chips(V.POSITIONS, field, "")); host.appendChild(d);
+    if (V.POST_TREATMENT) { [d, b] = details("After treatment"); b.appendChild(chips(V.POST_TREATMENT, field, "")); host.appendChild(d); }
+  }
+
+  const CHIPS_FOR = {
+    "Observation": () => V.OBSERVATION, "Palpation": () => V.PALPATION_FINDINGS,
+    "Muscle power": () => V.STRENGTH, "PAIVMS": () => V.PAIVMS, "Functional test": () => V.FUNCTIONAL,
+    "Special test": () => V.SPECIAL_TESTS, "Neurological examination": () => V.NEURO_PHRASES,
+    "Pain scale": () => ["0","1","2","3","4","5","6","7","8","9","10"],
+    "Problem list": () => [...V.IMPAIRMENTS, ...V.PARTICIPATION_RESTRICTION],
+    "Drug allergy": () => ["No", "Yes"], "Recommendation": () => V.PLAN_GOALS,
+    "Physician's recommendations": () => V.PLAN_GOALS,
+    "Physiotherapy Treatments": () => Object.keys(V.TREATMENT_MODALITIES),
+    "Chief Complaint": () => [...V.PAIN_TYPE.map((t) => t + " pain"), ...V.AGGRAVATING, ...V.EASING],
+    "Chief complaint": () => [...V.PAIN_TYPE.map((t) => t + " pain"), ...V.AGGRAVATING, ...V.EASING],
+    "Treatments": () => Object.keys(V.TREATMENT_MODALITIES),
+  };
+
+  function renderBuilder() {
+    const host = $("builder"); host.innerHTML = "";
+    setTimeout(renderSuggest, 0);
+    const fmt = S.format;
+    if (fmt === "SOAP with treatment") {
+      host.appendChild(fieldBox("Subjective", 4, "What the patient reports — any language.", true));
+      if (V.SUBJECTIVE_PHRASES) { let [ds, bs] = details("Follow-up openers"); bs.appendChild(chips([...V.SUBJECTIVE_PHRASES, ...V.PAIN_TYPE.map((t) => t + " pain"), ...V.AGGRAVATING, ...V.EASING], "Subjective", "")); host.appendChild(ds); }
+      host.appendChild(fieldBox("Objective", 7, "Findings. Use the rows below to add lines, or just type.", true));
+      objectiveExtras(host, "Objective");
+      host.appendChild(fieldBox("Analysis", 2, "e.g. Rt. achilles tendinitis, Lt. plantar fasciitis", true));
+      host.appendChild(fieldBox("Plan", 3, "", true));
+      let [d, b] = details("Goals"); b.appendChild(chips(V.PLAN_GOALS, "Plan", "")); host.appendChild(d);
+      host.appendChild(fieldBox("Treatment", 6, "Position, modality with parameters, then Area.", true));
+      treatmentExtras(host, "Treatment");
+      return;
+    }
+    const core = V.CORE_FIELDS[fmt], all = V.OUTPUT_FORMATS[fmt];
+    all.filter((f) => core.includes(f)).forEach((f) => {
+      host.appendChild(fieldBox(f, /history|xamination/i.test(f) ? 5 : 3, "", true));
+      if (CHIPS_FOR[f]) { const [d, b] = details("Options for " + f); b.appendChild(chips(CHIPS_FOR[f](), f, "")); host.appendChild(d); }
+      if (f === "Treatment" || f === "Treatments" || f === "Physiotherapy Treatments") treatmentExtras(host, f);
+    });
+    const optional = all.filter((f) => !core.includes(f));
+    if (optional.length) {
+      const [d, b] = details(`Optional detail — ${optional.length} more fields`);
+      const p = document.createElement("p"); p.className = "hint"; p.textContent = "Leave any of these blank and they will not appear in the note."; b.appendChild(p);
+      optional.forEach((f) => { b.appendChild(fieldBox(f, 2, "", false)); if (CHIPS_FOR[f]) b.appendChild(chips(CHIPS_FOR[f](), f, "")); });
+      host.appendChild(d);
+    }
+  }
+
+  // ---------- output ----------
+  function buildNote() {
+    const fmt = S.format, fields = V.OUTPUT_FORMATS[fmt];
+    if (fmt === "SOAP with treatment") {
+      const out = []; const tt = ($("tt").value || "").trim(); const subj = val("Subjective").trim();
+      if (tt || subj) { out.push(tt ? `Subjective: *Treatment times: ${tt}${S.ttSuffix ? " " + S.ttSuffix : ""}` : "Subjective:"); if (subj) out.push(subj); out.push(""); }
+      const obj = val("Objective").trim(); if (obj) out.push("Objective:", obj, "");
+      ["Analysis", "Plan", "Treatment"].forEach((l) => { const b = val(l).trim(); if (b) out.push(l + ":", b, ""); });
+      return out.join("\n").trim();
+    }
+    const out = [];
+    fields.forEach((f) => { const b = val(f).trim(); if (b) out.push(b.includes("\n") ? `${f}:\n${b}` : `${f}: ${b}`, ""); });
+    return out.join("\n").trim();
+  }
+  // Jane's forms have one box per section. Each section gets its own copy
+  // button, holding exactly what goes in that box - no heading, because the
+  // box already has one. Subjective carries the *Treatment times line, since
+  // that is where the clinic writes it.
+  function sectionText(f) {
+    let body = val(f).trim();
+    if (S.format === "SOAP with treatment" && f === "Subjective") {
+      const tt = ($("tt").value || "").trim();
+      if (tt) body = `*Treatment times: ${tt}${S.ttSuffix ? " " + S.ttSuffix : ""}` + (body ? "\n" + body : "");
+    }
+    return body;
+  }
+  async function copyText(text, btn, label) {
+    try { await navigator.clipboard.writeText(text); }
+    catch { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    if (btn) { btn.textContent = "Copied ✓"; btn.classList.add("done"); setTimeout(() => { btn.textContent = label; btn.classList.remove("done"); }, 1800); }
+    toast("Copied — paste into Jane's " + (label.replace(/^Copy /, "") || "box"));
+  }
+  function renderSections() {
+    const host = $("sections"); host.innerHTML = "";
+    const fields = V.OUTPUT_FORMATS[S.format];
+    let any = false;
+    fields.forEach((f) => {
+      const text = sectionText(f);
+      if (!text) return;
+      any = true;
+      const row = document.createElement("div"); row.className = "secrow";
+      const left = document.createElement("div");
+      left.innerHTML = `<div class="lbl">${escapeHtml(f)}</div><pre>${escapeHtml(text)}</pre>`;
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = "Copy";
+      b.onclick = () => copyText(text, b, "Copy");
+      row.appendChild(left); row.appendChild(b); host.appendChild(row);
+    });
+    if (!any) host.innerHTML = '<div class="empty">Fill in the fields and each section appears here with its own Copy button — one for each box in Jane.</div>';
+  }
+  function renderOutput() {
+    renderSections();
+    const note = buildNote(); const o = $("output"); const v = $("verdict");
+    const who = ($("patient").value || "").trim();
+    if (!note) { o.innerHTML = ""; v.innerHTML = ""; return; }
+    o.innerHTML = (who ? `<p class="hint">Draft for ${escapeHtml(who)} — not saved anywhere.</p>` : "") + `<pre class="note">${escapeHtml(note)}</pre>`;
+    v.innerHTML = note.includes(BLANK)
+      ? `<div class="note-warn">This draft still has <b>${BLANK}</b> placeholders. Fill in every measurement before pasting. If something was not assessed write <b>${V.NOT_ASSESSED}</b> — never guess a number.</div>`
+      : `<div class="note-ok">No placeholders left — ready to paste.</div>`;
+  }
+  const escapeHtml = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  async function copyNote() {
+    const note = buildNote(); if (!note) return toast("Nothing to copy yet");
+    try { await navigator.clipboard.writeText(note); toast("Copied — now paste into Jane"); }
+    catch { const ta = document.createElement("textarea"); ta.value = note; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Copied — now paste into Jane"); }
+  }
+  let toastT; function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2200); }
+
+  // ---------- dictation ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let active = null;
+  function targetTextarea(spec) { return spec.startsWith("f:") ? document.querySelector(`textarea[data-field="${CSS.escape(spec.slice(2))}"]`) : $(spec); }
+  function wireMic(btn) {
+    if (!SR) { btn.disabled = true; btn.textContent = "No dictation in this browser"; return; }
+    btn.onclick = () => {
+      if (active && active.btn === btn) { stopMic(); return; }
+      if (active) stopMic();
+      const ta = targetTextarea(btn.dataset.target); if (!ta) return;
+      const r = new SR(); r.continuous = true; r.interimResults = true; r.lang = S.lang;
+      const base = ta.value.replace(/\s+$/, ""); let finalText = "";
+      r.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t + " "; else interim += t; }
+        ta.value = (base ? base + "\n" : "") + (finalText + interim).trim();
+        ta.dispatchEvent(new Event("input"));
+      };
+      r.onerror = (e) => { toast(e.error === "not-allowed" ? "Microphone blocked — allow it in the browser" : "Dictation stopped: " + e.error); stopMic(); };
+      r.onend = () => { if (active && active.r === r) { try { r.start(); } catch { stopMic(); } } };
+      r.start(); active = { r, btn }; btn.classList.add("on"); btn.textContent = "⏹ Stop";
+    };
+  }
+  function stopMic() { if (!active) return; const { r, btn } = active; active = null; r.onend = null; try { r.stop(); } catch {} btn.classList.remove("on"); btn.textContent = "🎙 Dictate"; }
+
+  // ---------- photo of the patient's chart -> text ----------
+  // Runs Tesseract inside this browser. The photo never leaves the phone or PC;
+  // the reader and its Thai + English language files download once and are
+  // cached by the browser. Printed text reads well; handwriting is hit-and-miss.
+  let ocrWorker = null, ocrLib = null;
+  const ocrState = (msg) => { const s = $("ocrstate"); if (s) s.textContent = msg || ""; };
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    if (ocrLib) return ocrLib;
+    ocrLib = new Promise((ok, fail) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+      s.onload = ok; s.onerror = () => { ocrLib = null; fail(new Error("Could not download the photo reader — check the internet connection")); };
+      document.head.appendChild(s);
+    });
+    return ocrLib;
+  }
+  async function getWorker() {
+    if (ocrWorker) return ocrWorker;
+    await loadTesseract();
+    ocrState("Preparing the photo reader (first time only, about 3 MB)…");
+    ocrWorker = await Tesseract.createWorker(["tha", "eng"], 1, {
+      langPath: "https://tessdata.projectnaptha.com/4.0.0_fast",
+      logger: (m) => { if (m.status === "recognizing text") ocrState(`Reading the photo… ${Math.round((m.progress || 0) * 100)}%`); },
+    });
+    await ocrWorker.setParameters({ preserve_interword_spaces: "1" });
+    return ocrWorker;
+  }
+  async function prepImage(file) {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(file));
+    const max = 2000, k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    const g = c.getContext("2d"); g.drawImage(bmp, 0, 0, c.width, c.height);
+    // greyscale + contrast stretch: cheap, and it helps phone photos of paper
+    const img = g.getImageData(0, 0, c.width, c.height), d = img.data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < d.length; i += 4) { const y = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; d[i] = y; if (y < lo) lo = y; if (y > hi) hi = y; }
+    const span = Math.max(1, hi - lo);
+    for (let i = 0; i < d.length; i += 4) { const y = Math.max(0, Math.min(255, ((d[i] - lo) / span) * 255)); d[i] = d[i + 1] = d[i + 2] = y; }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+  function cleanOcr(text) {
+    return text.split("\n").map((l) => l.replace(/[_|]{2,}/g, " ").replace(/\s+/g, " ").trim())
+      .filter((l) => /[A-Za-z0-9฀-๿]{2,}/.test(l)).join("\n");
+  }
+  async function readPhotos(files) {
+    const btn = $("photobtn"); btn.classList.add("busy");
+    try {
+      const w = await getWorker();
+      for (let n = 0; n < files.length; n++) {
+        ocrState(files.length > 1 ? `Reading photo ${n + 1} of ${files.length}…` : "Reading the photo…");
+        const canvas = await prepImage(files[n]);
+        const { data } = await w.recognize(canvas);
+        const text = cleanOcr(data.text || "");
+        const ta = $("transcript");
+        if (!text) { toast("Could not read any text in that photo — try a straighter, brighter shot"); continue; }
+        ta.value = (ta.value.replace(/\s+$/, "") ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + "[From photo]\n" + text;
+        ta.dispatchEvent(new Event("input"));
+        if (!$("trbox").open) $("trbox").open = true;
+      }
+      ocrState("Photo read — check the words below; the reader guesses at handwriting.");
+      setTimeout(() => ocrState(""), 6000);
+    } catch (err) {
+      console.error(err); ocrState(""); toast(err.message || "The photo could not be read");
+    } finally { btn.classList.remove("busy"); }
+  }
+
+  // ---------- transcript panel ----------
+  function renderNums() {
+    const nums = numbersHeard($("transcript").value || ""); const host = $("nums");
+    const words = ($("transcript").value || "").trim().split(/\s+/).filter(Boolean).length;
+    $("trsum").textContent = words ? `Session notes — ${words} words` : "Session notes — paste, speak, or photograph the patient's chart";
+    if (!nums.length) { host.innerHTML = ""; return; }
+    host.innerHTML = `<p class="sub">${nums.length} number${nums.length > 1 ? "s" : ""} heard — check each, then type it in yourself</p>` +
+      `<div class="nums">${nums.slice(0, 25).map(([v, c]) => `<div><b>${escapeHtml(v)}</b> <span>…${escapeHtml(c)}…</span></div>`).join("")}</div>`;
+  }
+
+  // ---------- condition search ----------
+  const ALL_DX = Object.values(V.DIAGNOSES).flat();
+  function renderDx() {
+    const q = ($("dxq").value || "").trim().toLowerCase(); const host = $("dxhits"); host.innerHTML = "";
+    if (!q) return;
+    const hits = ALL_DX.filter((d) => d.toLowerCase().includes(q)).slice(0, 9);
+    const target = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
+    if (!hits.length) { host.innerHTML = `<span class="hint">Not in the library — type it straight into ${target}. That is always allowed.</span>`; return; }
+    hits.forEach((h) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = h; b.onclick = () => { S.condition = h; append(target, h, ""); $("dxq").value = ""; renderDx(); renderSuggest(); }; host.appendChild(b); });
+  }
+
+  // ---------- init ----------
+  const CAPTIONS = { "SOAP with treatment": "Every follow-up visit", "New patient's record": "First visit or a consultation",
+    "Physiotherapy Report": "Report for the patient, employer or insurer" };
+  Object.keys(V.OUTPUT_FORMATS).forEach((f, i) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="radio" name="fmt" value="${f}" ${i === 0 ? "checked" : ""}><b>${f}</b><small>${CAPTIONS[f] || ""}</small>`;
+    l.querySelector("input").onchange = () => { S.format = f; S.auto = {}; $("tt").disabled = f !== "SOAP with treatment"; renderBuilder(); renderOutput(); renderDx(); autoFill(); };
+    $("formats").appendChild(l);
+  });
+  V.REGIONS.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; $("region").appendChild(o); });
+  $("region").onchange = (e) => { S.region = e.target.value; S.regionManual = true; renderBuilder(); autoFill(); };
+  $("tt").oninput = renderOutput; $("patient").oninput = renderOutput;
+  $("dxq").oninput = renderDx;
+  $("dxq").onkeydown = (e) => {
+    if (e.key !== "Enter") return; e.preventDefault();
+    const q = ($("dxq").value || "").trim(); if (!q) return;
+    const first = $("dxhits").querySelector("button");
+    const target = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
+    S.condition = first ? first.textContent : q; append(target, first ? first.textContent : q, ""); $("dxq").value = ""; renderDx(); renderSuggest();
+  };
+  $("transcript").oninput = () => { renderNums(); renderBuilder(); scheduleFill(); };
+  $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => { S.lang = b.dataset.l; $("langs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); });
+  wireMic($("trmic"));
+  $("photo").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; if (files.length) readPhotos(files); };
+  $("lastnote").addEventListener("paste", () => setTimeout(useLastNote, 50));
+  $("uselast").onclick = useLastNote;
+  $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
+  $("copy").onclick = copyNote;
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.ttSuffix = ""; S.condition = ""; $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  window.addEventListener("beforeunload", stopMic);
+
+  renderBuilder(); renderOutput(); renderNums();
+})();

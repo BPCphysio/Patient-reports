@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>BPC Charting Assistant</title>
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;600&family=Manrope:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --navy:#1F244C; --ink:#171A2B; --cyan:#38C2CD; --cyan-deep:#1F7F88;
+    --paper:#FEFDFB; --cream:#F4F1EB; --card:#FFFFFF;
+    --muted:#5E6278; --line:rgba(23,26,43,0.12);
+    --good:#257E55; --warn:#B5811A;
+    --r:10px;
+  }
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Manrope','Noto Sans Thai',system-ui,sans-serif;
+    font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3 { font-family:'Rubik','Noto Sans Thai',system-ui,sans-serif; color:var(--navy);
+    margin:0; font-weight:500; letter-spacing:-0.01em; }
+  h1 { font-size:1.15rem; font-weight:600; }
+  h2 { font-size:0.98rem; font-weight:600; }
+  p { margin:0; }
+  button, input, select, textarea { font:inherit; color:inherit; }
+  textarea { resize:vertical; }
+
+  .wrap { max-width:1280px; margin:0 auto; padding:14px 16px 60px; }
+
+  /* header */
+  .bar { display:flex; align-items:center; gap:12px; background:var(--cream);
+    border:1px solid var(--line); border-radius:var(--r); padding:10px 14px; margin-bottom:14px; }
+  .bar img { height:36px; width:auto; display:block; }
+  .bar p { color:var(--muted); font-size:0.82rem; }
+  .bar .right { margin-left:auto; }
+
+  /* steps */
+  .step { display:flex; align-items:center; gap:8px; margin:0 0 10px; }
+  .step .n { width:22px; height:22px; border-radius:999px; background:var(--navy); color:#fff;
+    font-size:0.72rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none; }
+  .step h2 { font-size:0.95rem; }
+
+  /* format */
+  .formats { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; margin-bottom:14px; }
+  .formats label { display:grid; gap:2px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--r); padding:10px 12px; cursor:pointer; }
+  .formats label:has(input:checked) { border-color:var(--cyan); box-shadow:0 0 0 3px rgba(56,194,205,0.16); }
+  .formats input { position:absolute; opacity:0; pointer-events:none; }
+  .formats b { font-weight:700; font-size:0.9rem; }
+  .formats small { color:var(--muted); font-size:0.78rem; }
+
+  /* top controls */
+  .controls { display:grid; grid-template-columns:2fr 1.2fr 0.8fr 0.9fr; gap:10px; margin-bottom:12px; }
+  .field { display:grid; gap:4px; }
+  .field > span { font-size:0.76rem; font-weight:700; color:var(--muted); letter-spacing:0.02em; }
+  input[type=text], select, textarea {
+    width:100%; background:var(--card); border:1px solid var(--line); border-radius:8px;
+    padding:9px 11px; font-size:0.92rem; outline:none;
+  }
+  input[type=text]:focus, textarea:focus, select:focus { border-color:var(--cyan);
+    box-shadow:0 0 0 3px rgba(56,194,205,0.16); }
+  .hits { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+
+  /* panels */
+  details { border:1px solid var(--line); border-radius:8px; background:var(--card); margin-bottom:8px; }
+  details > summary { list-style:none; cursor:pointer; padding:10px 12px; font-weight:600;
+    font-size:0.86rem; display:flex; align-items:center; gap:8px; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary::before { content:"›"; color:var(--muted); font-weight:700; transition:transform .15s; }
+  details[open] > summary::before { transform:rotate(90deg); }
+  details > .body { padding:4px 12px 12px; display:grid; gap:10px; }
+  details.transcript { background:var(--cream); margin-bottom:14px; }
+
+  /* chips */
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { border:1px solid var(--line); background:var(--paper); border-radius:999px;
+    padding:7px 12px; font-size:0.83rem; font-weight:500; cursor:pointer; line-height:1.25;
+    min-height:36px; text-align:left; }
+  .chip:hover { border-color:var(--cyan); color:var(--cyan-deep); background:#fff; }
+  .chip.heard { border-color:var(--cyan); background:rgba(56,194,205,0.10); }
+  .chip.heard::before { content:"• "; color:var(--cyan-deep); font-weight:700; }
+  .sub { font-size:0.76rem; font-weight:700; color:var(--muted); margin-top:2px; }
+  .sugg:empty { display:none; }
+  .sugg { display:grid; gap:6px; margin-top:4px; }
+  .chip.sg { border-style:dashed; background:var(--cream); max-width:100%; white-space:normal; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+
+  /* builder + output */
+  .main { display:grid; grid-template-columns:1.25fr 1fr; gap:22px; align-items:start; }
+  .fld { display:grid; gap:6px; margin-bottom:12px; }
+  .fld .head { display:flex; align-items:center; justify-content:space-between; }
+  .fld .head b { font-weight:700; font-size:0.9rem; }
+  .mic { border:1px solid var(--navy); background:var(--navy); color:#fff; border-radius:999px;
+    padding:5px 12px; font-size:0.78rem; font-weight:700; cursor:pointer; display:inline-flex;
+    align-items:center; gap:6px; }
+  .mic.on { background:#C4462F; border-color:#C4462F; }
+  .mic:disabled { opacity:.45; cursor:not-allowed; }
+  .tools { display:flex; gap:6px; flex-wrap:wrap; }
+  .mic.photo { background:var(--cyan-deep); border-color:var(--cyan-deep); }
+  .mic.photo.busy { opacity:.6; pointer-events:none; }
+  .langs { display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+  .langs button { background:var(--paper); border:none; padding:6px 12px; font-size:0.8rem; cursor:pointer; }
+  .langs button.on { background:var(--navy); color:#fff; }
+  .hint { color:var(--muted); font-size:0.78rem; }
+
+  .out { position:sticky; top:12px; }
+  pre.note { background:var(--cream); border:1px solid var(--line); border-radius:8px;
+    padding:14px; margin:0; white-space:pre-wrap; word-break:break-word;
+    font-family:ui-monospace,Consolas,'Noto Sans Thai',monospace; font-size:0.82rem; line-height:1.65;
+    min-height:120px; }
+  .secrow { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:start;
+    background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:8px; }
+  .secrow .lbl { font-weight:700; font-size:0.84rem; color:var(--navy); margin-bottom:4px; }
+  .secrow pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family:ui-monospace,Consolas,'Noto Sans Thai',monospace;
+    font-size:0.78rem; line-height:1.55; color:var(--ink); max-height:120px; overflow:auto; }
+  .secrow .btn { padding:8px 14px; white-space:nowrap; }
+  .secrow .btn.done { background:var(--good); border-color:var(--good); color:#fff; }
+  .secrow.empty-sec { opacity:.5; }
+  .actions { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+  .btn { border-radius:8px; padding:10px 16px; font-weight:700; font-size:0.88rem; cursor:pointer;
+    border:1px solid var(--line); background:var(--card); }
+  .btn.primary { background:var(--navy); border-color:var(--navy); color:#fff; flex:1; }
+  .btn.primary:hover { background:#2A3160; }
+  .note-warn { background:rgba(181,129,26,0.10); border:1px solid rgba(181,129,26,0.3);
+    border-radius:8px; padding:9px 12px; font-size:0.82rem; color:#7A5610; }
+  .note-ok { background:rgba(37,126,85,0.08); border:1px solid rgba(37,126,85,0.25);
+    border-radius:8px; padding:9px 12px; font-size:0.82rem; color:var(--good); }
+  .empty { color:var(--muted); font-size:0.86rem; text-align:center; padding:26px 10px; }
+  .nums { display:grid; gap:4px; font-size:0.84rem; }
+  .nums b { color:var(--ink); }
+  .nums span { color:var(--muted); }
+  .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
+    background:var(--navy); color:#fff; padding:10px 16px; border-radius:999px; font-size:0.86rem;
+    font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s; }
+  .toast.show { opacity:1; }
+
+  @media (max-width:900px) {
+    .wrap { padding:10px 12px 70px; }
+    .controls { grid-template-columns:1fr 1fr; }
+    .controls .field:first-child { grid-column:1 / -1; }
+    .main { grid-template-columns:1fr; gap:14px; }
+    .out { position:static; }
+    .row3 { grid-template-columns:1fr; }
+    .chip { min-height:40px; font-size:0.88rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <img src="logo.png" alt="Bangkok Physiotherapy Center">
+    <div><h1>Charting Assistant</h1><p>Draft the note, copy it into Jane. Nothing is saved here.</p></div>
+  </header>
+
+  <div class="step"><span class="n">1</span><h2>What are you writing?</h2></div>
+  <div class="formats" id="formats"></div>
+
+  <div class="controls">
+    <label class="field"><span>Condition / diagnosis</span>
+      <input type="text" id="dxq" placeholder="Type what you found — plantar, MPS, ACL, frozen shoulder…" autocomplete="off">
+      <div class="hits" id="dxhits"></div>
+    </label>
+    <label class="field"><span>Body region</span><select id="region"></select></label>
+    <label class="field"><span>Treatment times</span><input type="text" id="tt" placeholder="e.g. 5" inputmode="numeric"></label>
+    <label class="field"><span>Patient ref. (optional)</span><input type="text" id="patient" placeholder="not saved"></label>
+  </div>
+
+  <details class="transcript" id="lastbox">
+    <summary>Follow-up visit? Paste the last note from Jane and start from it</summary>
+    <div class="body">
+      <p class="hint">Open the patient's previous chart entry in Jane, select all, copy, and paste it here. Every section is filled from it and the treatment count goes up by one — then change only what is different today.<br>คนไข้เก่า: ก๊อปปี้ chart ครั้งก่อนจาก Jane มาวางที่นี่ ระบบจะเติมทุกช่องให้ แล้วแก้เฉพาะสิ่งที่ต่างจากครั้งก่อน</p>
+      <textarea id="lastnote" rows="5" placeholder="Paste the previous note here — it fills the boxes below the moment it lands."></textarea>
+      <div class="actions"><button class="btn" id="uselast">Fill from this note again</button><button class="btn" id="clearlast">Clear this box</button></div>
+      <p class="hint" id="laststate"></p>
+    </div>
+  </details>
+
+  <details class="transcript" id="trbox" open>
+    <summary id="trsum">Session notes — paste, speak, or photograph the patient's chart</summary>
+    <div class="body">
+      <p class="hint">Three ways in, Thai or English or both: <b>paste</b> the session transcript, press <b>Dictate</b> and speak, or add a <b>photo</b> of the chart the patient filled in. Everything mentioned here fills section 2 by itself — check it, then copy.<br>วางข้อความ พูดใส่ช่องนี้ หรือถ่ายรูปแบบฟอร์มที่คนไข้กรอก — สิ่งที่พูดถึงจะถูกใส่ในข้อ 2 ให้อัตโนมัติ</p>
+      <div class="fld">
+        <div class="head">
+          <div class="langs" id="langs"><button data-l="th-TH" class="on">Thai</button><button data-l="en-US">English</button></div>
+          <div class="tools">
+            <label class="mic photo" id="photobtn">📷 Photo of chart<input type="file" id="photo" accept="image/*" capture="environment" multiple hidden></label>
+            <button class="mic" id="trmic" data-target="transcript">🎙 Dictate</button>
+          </div>
+        </div>
+        <textarea id="transcript" rows="6" placeholder="Paste the transcript, dictate, add a photo, or just type — any language."></textarea>
+        <p class="hint" id="ocrstate"></p>
+        <p class="hint" id="fillstate"></p>
+        <p class="hint">Dictation listens for one language at a time. On a phone, the keyboard microphone works in this box too and handles mixed Thai and English. Photos are read on this device and never uploaded.</p>
+      </div>
+      <div id="nums"></div>
+    </div>
+  </details>
+
+  <div class="main">
+    <section>
+      <div class="step"><span class="n">2</span><h2>Build the note</h2></div>
+      <div id="builder"></div>
+    </section>
+    <aside class="out">
+      <div class="step"><span class="n">3</span><h2>Copy into Jane</h2></div>
+      <div id="sections"></div>
+      <div id="verdict"></div>
+      <details id="wholebox"><summary>Preview the whole note</summary><div class="body"><div id="output"></div>
+        <div class="actions"><button class="btn" id="copy">Copy everything as one block</button></div>
+        <p class="hint">Only for forms with a single box. Jane's SOAP form has one box per section — use the buttons above.</p></div></details>
+      <div class="actions"><button class="btn" id="clear">Clear</button></div>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="vocab.js"></script>
+<script src="suggest.js"></script>
+<script src="detect.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
