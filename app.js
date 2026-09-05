@@ -263,9 +263,16 @@
   const GROUP_REGION = { "Neck & upper back": "Neck / cervical", "Shoulder": "Shoulder", "Elbow, wrist & hand": "Elbow, wrist & hand",
     "Low back & pelvis": "Trunk / lumbar", "Hip & thigh": "Hip", "Knee": "Knee", "Ankle & foot": "Ankle & foot" };
   const dxField = () => (S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis");
+  const CONDITION_REGION = [
+    [/scoliosis|kyphosis|thoracic|rib|costo/i, "Thoracic spine"],
+    [/office syndrome|upper cross|myofascial|mps|text neck|headache|torticollis|whiplash|cervical|neck/i, "Neck / cervical"],
+    [/lower cross|low back|lumbar|disc|hnp|sciatic|spondyl|stenosis|sij|sacroiliac|coccy|pelvic|piriformis/i, "Trunk / lumbar"],
+    [/postur/i, "Thoracic spine"],
+  ];
   function regionForCondition(name) {
     for (const [group, list] of Object.entries(V.DIAGNOSES)) if (list.includes(name) && GROUP_REGION[group]) return GROUP_REGION[group];
-    const r = DETECT.run(name, S.region).region; return r || null;
+    for (const [re, region] of CONDITION_REGION) if (re.test(name)) return region;
+    return DETECT.run(name, S.region).region || "General / other";
   }
   function setCondition(name, auto) {
     name = (name || "").trim(); if (!name) return;
@@ -275,8 +282,11 @@
     if (!hasLine(f, name)) append(f, name, "", true);
     const r = regionForCondition(name);
     if (r && r !== S.region) { S.region = r; $("region").value = r; }
+    // spine, posture and whole-body conditions have no side: scoliosis, low back, neck, MPS…
+    if (MIDLINE.has(S.region) || /scoliosis|posture|spine|spinal|lumbar|cervical|thoracic|core|pelvic|coccy/i.test(name)) setSide("", true);
     renderBuilder(); renderOutput(); renderCondTag(); renderSuggest();
   }
+  const MIDLINE = new Set(["Neck / cervical", "Thoracic spine", "Trunk / lumbar", "General / other"]);
   function clearCondition() {
     if (S.condition) removeLine(dxField(), S.condition);
     S.condition = ""; S.conditionAuto = false;
@@ -287,11 +297,11 @@
     if (!S.condition) { host.hidden = true; $("dxq").placeholder = "Type what you found — plantar, MPS, ACL, frozen shoulder…"; return; }
     host.hidden = false; $("dxq").placeholder = "Add another condition…";
     const tag = document.createElement("span"); tag.className = "tag";
-    tag.innerHTML = `<span>${escapeHtml(S.condition)}</span><small>${escapeHtml(S.region)}</small>`;
+    tag.innerHTML = `<span>${escapeHtml(S.condition)}</span><small>${escapeHtml(S.region)}${S.side ? " · " + escapeHtml(S.side) : " · no side"}</small>`;
     const x = document.createElement("button"); x.type = "button"; x.title = "Remove this condition"; x.textContent = "×"; x.onclick = clearCondition;
     tag.appendChild(x); host.appendChild(tag);
   }
-  function setSide(s) { S.side = s; $("sides").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.s === s)); renderSuggest(); }
+  function setSide(s, quiet) { S.side = s; $("sides").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.s === s)); if (!quiet) renderSuggest(); }
 
   // ---------- what BPC physios usually write for this condition ----------
   // suggest.js (built from the clinic's own charts; only phrases that recur
@@ -680,7 +690,7 @@
     const first = $("dxhits").querySelector("button");
     setCondition(first ? first.textContent : q); $("dxq").value = ""; renderDx();
   };
-  $("sides").querySelectorAll("button").forEach((b) => b.onclick = () => setSide(b.dataset.s));
+  $("sides").querySelectorAll("button").forEach((b) => b.onclick = () => { setSide(b.dataset.s); renderCondTag(); });
   $("transcript").oninput = () => { renderNums(); renderBuilder(); scheduleFill(); };
   $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => { S.lang = b.dataset.l; $("langs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); });
   wireMic($("trmic"));
