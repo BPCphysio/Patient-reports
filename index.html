@@ -56,7 +56,14 @@
   .formats small { color:var(--muted); font-size:0.78rem; }
 
   /* top controls */
-  .controls { display:grid; grid-template-columns:2fr 1.2fr 0.8fr 0.9fr; gap:10px; margin-bottom:12px; }
+  .controls { display:grid; grid-template-columns:2fr 0.9fr 1.2fr 0.8fr 0.9fr; gap:10px; margin-bottom:12px; }
+  .sides { height:42px; align-items:stretch; }
+  .sides button { flex:1; }
+  .tag { display:inline-flex; align-items:center; gap:8px; background:var(--navy); color:#fff; border-radius:999px;
+    padding:7px 8px 7px 12px; font-size:0.84rem; font-weight:600; }
+  .tag button { border:none; background:rgba(255,255,255,0.18); color:#fff; border-radius:999px; width:22px; height:22px;
+    cursor:pointer; font-size:0.9rem; line-height:1; }
+  .tag small { opacity:.75; font-weight:500; }
   .field { display:grid; gap:4px; }
   .field > span { font-size:0.76rem; font-weight:700; color:var(--muted); letter-spacing:0.02em; }
   input[type=text], select, textarea {
@@ -166,7 +173,11 @@
     <label class="field"><span>Condition / diagnosis</span>
       <input type="text" id="dxq" placeholder="Type what you found — plantar, MPS, ACL, frozen shoulder…" autocomplete="off">
       <div class="hits" id="dxhits"></div>
+      <div class="hits" id="dxsel" hidden></div>
     </label>
+    <div class="field"><span>Side</span>
+      <div class="langs sides" id="sides"><button data-s="" class="on">—</button><button data-s="Rt.">Rt.</button><button data-s="Lt.">Lt.</button><button data-s="Both">Both</button></div>
+    </div>
     <label class="field"><span>Body region</span><select id="region"></select></label>
     <label class="field"><span>Treatment times</span><input type="text" id="tt" placeholder="e.g. 5" inputmode="numeric"></label>
     <label class="field"><span>Patient ref. (optional)</span><input type="text" id="patient" placeholder="not saved"></label>

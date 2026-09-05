@@ -137,6 +137,10 @@
       next.filter((w) => !prevKeys.has(key(w))).forEach((w) => { if (!hasLine(field, w.line)) append(field, w.line, w.heading, true); });
       S.auto[field] = next; count += next.length;
     });
+    // adopt the first diagnosis heard in the notes as the condition, until the physio picks one
+    const heardDx = res.lines.find((l) => l.sec === "analysis");
+    if (heardDx && (!S.condition || S.conditionAuto) && heardDx.line.replace(/^(Rt\.|Lt\.) /, "") !== S.condition) setCondition(heardDx.line.replace(/^(Rt\.|Lt\.) /, ""), true);
+    else if (!heardDx && S.condition && S.conditionAuto) { S.condition = ""; S.conditionAuto = false; renderCondTag(); }
     renderOutput(); scheduleSuggest();
     const st = $("fillstate");
     if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.` : "Nothing recognised yet — keep going, or use the options in section 2.";
@@ -253,10 +257,57 @@
     return w;
   }
 
+  // ---------- the condition in play ----------
+  // Chosen from the search box (or adopted from the notes). It stays in the
+  // Analysis/Diagnosis box, sets the body region, and drives the suggestions.
+  const GROUP_REGION = { "Neck & upper back": "Neck / cervical", "Shoulder": "Shoulder", "Elbow, wrist & hand": "Elbow, wrist & hand",
+    "Low back & pelvis": "Trunk / lumbar", "Hip & thigh": "Hip", "Knee": "Knee", "Ankle & foot": "Ankle & foot" };
+  const dxField = () => (S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis");
+  function regionForCondition(name) {
+    for (const [group, list] of Object.entries(V.DIAGNOSES)) if (list.includes(name) && GROUP_REGION[group]) return GROUP_REGION[group];
+    const r = DETECT.run(name, S.region).region; return r || null;
+  }
+  function setCondition(name, auto) {
+    name = (name || "").trim(); if (!name) return;
+    const f = dxField();
+    if (S.condition && S.condition !== name && S.conditionAuto !== false) removeLine(f, S.condition);
+    S.condition = name; S.conditionAuto = !!auto;
+    if (!hasLine(f, name)) append(f, name, "", true);
+    const r = regionForCondition(name);
+    if (r && r !== S.region) { S.region = r; $("region").value = r; }
+    renderBuilder(); renderOutput(); renderCondTag(); renderSuggest();
+  }
+  function clearCondition() {
+    if (S.condition) removeLine(dxField(), S.condition);
+    S.condition = ""; S.conditionAuto = false;
+    renderCondTag(); renderOutput(); renderSuggest();
+  }
+  function renderCondTag() {
+    const host = $("dxsel"); host.innerHTML = "";
+    if (!S.condition) { host.hidden = true; $("dxq").placeholder = "Type what you found — plantar, MPS, ACL, frozen shoulder…"; return; }
+    host.hidden = false; $("dxq").placeholder = "Add another condition…";
+    const tag = document.createElement("span"); tag.className = "tag";
+    tag.innerHTML = `<span>${escapeHtml(S.condition)}</span><small>${escapeHtml(S.region)}</small>`;
+    const x = document.createElement("button"); x.type = "button"; x.title = "Remove this condition"; x.textContent = "×"; x.onclick = clearCondition;
+    tag.appendChild(x); host.appendChild(tag);
+  }
+  function setSide(s) { S.side = s; $("sides").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.s === s)); renderSuggest(); }
+
   // ---------- what BPC physios usually write for this condition ----------
-  // suggest.js (built from the clinic's own charts, phrases seen in 3+ charts
-  // only) maps a normalised diagnosis to the most common lines per box.
+  // suggest.js (built from the clinic's own charts; only phrases that recur
+  // across many charts) maps a diagnosis to the most common lines per box.
+  // Side words were stripped out of every line: the physio picks Rt./Lt./Both.
   const SG = window.SUGGEST || null;
+  const SIDE_TOKEN = (SG && SG.side) || "⟨side⟩";
+  function withSide(line) {
+    if (!line.includes(SIDE_TOKEN)) return line;
+    let s = S.side ? line.split(SIDE_TOKEN).join(S.side) : line.split(SIDE_TOKEN).join("");
+    return s.replace(/\s+/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/\(\s+/g, "(").trim();
+  }
+  // Lines that already exist as standard options below the box are not repeated as suggestions.
+  const VOCAB_TERMS = new Set([...V.OBSERVATION, ...V.PALPATION_FINDINGS, ...(V.PALPATION_NORMALS || []), ...V.STRENGTH, ...V.FUNCTIONAL,
+    ...V.SPECIAL_TESTS, ...V.PLAN_GOALS, ...V.POSITIONS, ...(V.POST_TREATMENT || []), ...(V.SUBJECTIVE_PHRASES || []), ...V.SESSION_LENGTHS,
+    ...Object.keys(V.TREATMENT_MODALITIES), ...Object.values(V.DIAGNOSES).flat(), ...V.ROM_QUALIFIERS].map((t) => t.toLowerCase()));
   const EQUIV = { "Subjective": ["Subjective", "Chief Complaint", "Chief complaint"], "Chief Complaint": ["Chief Complaint", "Chief complaint", "Subjective"], "Chief complaint": ["Chief complaint", "Chief Complaint", "Subjective"],
     "Objective": ["Objective", "Physical Examinations"], "Physical Examinations": ["Physical Examinations", "Objective"],
     "Analysis": ["Analysis", "Diagnosis"], "Diagnosis": ["Diagnosis", "Analysis"], "Plan": ["Plan", "Recommendation"], "Recommendation": ["Recommendation", "Plan"],
@@ -287,21 +338,24 @@
   }
   function renderSuggest() {
     if (!SG) return;
-    const q = currentCondition(); const hit = findCondition(q);
+    const q = currentCondition(); const hit = q ? findCondition(q) : null;
     document.querySelectorAll(".sugg").forEach((box) => {
       box.innerHTML = ""; const field = box.dataset.for;
+      if (!hit) return; // nothing until a condition is chosen
       const labels = EQUIV[field] || [field];
-      let lines = [], source = "";
-      if (hit) { for (const l of labels) { if (hit[1].s[l] && hit[1].s[l].length) { lines = hit[1].s[l]; source = hit[0]; break; } } }
-      if (!lines.length) { for (const l of labels) { if (SG.global[l] && SG.global[l].length) { lines = SG.global[l]; break; } } }
+      let lines = [];
+      for (const l of labels) { if (hit[1].s[l] && hit[1].s[l].length) { lines = hit[1].s[l]; break; } }
       if (!lines.length) return;
-      const shown = lines.filter(([line]) => !hasLine(field, line)).slice(0, 8);
+      const seen = new Set();
+      const shown = lines.map(([line]) => withSide(line)).filter((t) => {
+        const k = t.toLowerCase(); if (!t || seen.has(k) || VOCAB_TERMS.has(k) || hasLine(field, t)) return false; seen.add(k); return true;
+      }).slice(0, 8);
       if (!shown.length) return;
       const p = document.createElement("p"); p.className = "sub";
-      p.textContent = source ? `Physios usually write here for “${source}” (${hit[1].n} charts) — tap to add` : "Most common lines in this box — tap to add";
+      p.textContent = `For ${hit[0]} (${hit[1].n} BPC charts) — tap to add` + (S.side ? `, side ${S.side}` : "");
       box.appendChild(p);
       const wrap = document.createElement("div"); wrap.className = "chips";
-      shown.forEach(([line]) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip sg"; b.textContent = line; b.onclick = () => { append(field, line, ""); renderSuggest(); }; wrap.appendChild(b); });
+      shown.forEach((t) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip sg"; b.textContent = t; b.onclick = () => { append(field, t, ""); renderSuggest(); }; wrap.appendChild(b); });
       box.appendChild(wrap);
     });
   }
@@ -599,7 +653,7 @@
     const hits = ALL_DX.filter((d) => d.toLowerCase().includes(q)).slice(0, 9);
     const target = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
     if (!hits.length) { host.innerHTML = `<span class="hint">Not in the library — type it straight into ${target}. That is always allowed.</span>`; return; }
-    hits.forEach((h) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = h; b.onclick = () => { S.condition = h; append(target, h, ""); $("dxq").value = ""; renderDx(); renderSuggest(); }; host.appendChild(b); });
+    hits.forEach((h) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = h; b.onclick = () => { setCondition(h); $("dxq").value = ""; renderDx(); }; host.appendChild(b); });
   }
 
   // ---------- init ----------
@@ -608,7 +662,12 @@
   Object.keys(V.OUTPUT_FORMATS).forEach((f, i) => {
     const l = document.createElement("label");
     l.innerHTML = `<input type="radio" name="fmt" value="${f}" ${i === 0 ? "checked" : ""}><b>${f}</b><small>${CAPTIONS[f] || ""}</small>`;
-    l.querySelector("input").onchange = () => { S.format = f; S.auto = {}; $("tt").disabled = f !== "SOAP with treatment"; renderBuilder(); renderOutput(); renderDx(); autoFill(); };
+    l.querySelector("input").onchange = () => {
+      S.format = f; S.auto = {}; $("tt").disabled = f !== "SOAP with treatment";
+      $("lastbox").hidden = f === "New patient's record"; // a new patient has no last note
+      if (S.condition && !hasLine(dxField(), S.condition)) append(dxField(), S.condition, "", true);
+      renderBuilder(); renderOutput(); renderDx(); autoFill(); renderCondTag();
+    };
     $("formats").appendChild(l);
   });
   V.REGIONS.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; $("region").appendChild(o); });
@@ -619,9 +678,9 @@
     if (e.key !== "Enter") return; e.preventDefault();
     const q = ($("dxq").value || "").trim(); if (!q) return;
     const first = $("dxhits").querySelector("button");
-    const target = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
-    S.condition = first ? first.textContent : q; append(target, first ? first.textContent : q, ""); $("dxq").value = ""; renderDx(); renderSuggest();
+    setCondition(first ? first.textContent : q); $("dxq").value = ""; renderDx();
   };
+  $("sides").querySelectorAll("button").forEach((b) => b.onclick = () => setSide(b.dataset.s));
   $("transcript").oninput = () => { renderNums(); renderBuilder(); scheduleFill(); };
   $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => { S.lang = b.dataset.l; $("langs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); });
   wireMic($("trmic"));
@@ -630,7 +689,7 @@
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
   $("copy").onclick = copyNote;
-  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.ttSuffix = ""; S.condition = ""; $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();
