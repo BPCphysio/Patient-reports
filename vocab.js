@@ -201,6 +201,28 @@ window.VOCAB = {
    "pronator teres",
    "supinator",
    "first dorsal interosseous"
+  ],
+  "Ligaments & structures": [
+   "ATFL",
+   "CFL",
+   "deltoid ligament",
+   "MCL",
+   "LCL",
+   "ACL",
+   "PCL",
+   "TFCC",
+   "AC joint",
+   "SIJ",
+   "greater trochanter",
+   "lateral epicondyle",
+   "medial epicondyle",
+   "pes anserinus",
+   "coccyx",
+   "facet joint",
+   "L4-L5",
+   "L5-S1",
+   "C5-C6",
+   "C6-C7"
   ]
  },
  "SIDES": [

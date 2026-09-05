@@ -125,6 +125,8 @@
     res.lines.forEach((l) => {
       const t = target(l.sec, l.heading); if (!t || !t[0]) return;
       let line = l.line;
+      // the chosen condition is already in the box; do not add it again with a side
+      if (l.sec === "analysis" && S.condition && line.replace(/^(Rt\.|Lt\.|Both) /, "").toLowerCase() === S.condition.toLowerCase()) return;
       if (S.format === "New patient's record" && t[0] === "Pain scale") line = res.vas || line;
       (wanted[t[0]] = wanted[t[0]] || []).push({ heading: t[1] || "", line });
     });
