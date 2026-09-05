@@ -121,6 +121,10 @@
     const res = DETECT.run(text, S.region);
     if (res.region && !S.regionManual && res.region !== S.region) { S.region = res.region; $("region").value = res.region; renderBuilder(); }
     if (res.tt && !$("tt").value.trim()) $("tt").value = res.tt;
+    // adopt the first diagnosis heard as the condition before placing lines, so it is not added twice
+    const heardDx0 = res.lines.find((l) => l.sec === "analysis");
+    if (heardDx0 && (!S.condition || S.conditionAuto)) { const nm = heardDx0.line.replace(/^(Rt\.|Lt\.|Both) /, ""); if (nm !== S.condition) setCondition(nm, true); }
+    else if (!heardDx0 && S.condition && S.conditionAuto) { S.condition = ""; S.conditionAuto = false; renderCondTag(); }
     const wanted = {};
     res.lines.forEach((l) => {
       const t = target(l.sec, l.heading); if (!t || !t[0]) return;
@@ -139,10 +143,6 @@
       next.filter((w) => !prevKeys.has(key(w))).forEach((w) => { if (!hasLine(field, w.line)) append(field, w.line, w.heading, true); });
       S.auto[field] = next; count += next.length;
     });
-    // adopt the first diagnosis heard in the notes as the condition, until the physio picks one
-    const heardDx = res.lines.find((l) => l.sec === "analysis");
-    if (heardDx && (!S.condition || S.conditionAuto) && heardDx.line.replace(/^(Rt\.|Lt\.) /, "") !== S.condition) setCondition(heardDx.line.replace(/^(Rt\.|Lt\.) /, ""), true);
-    else if (!heardDx && S.condition && S.conditionAuto) { S.condition = ""; S.conditionAuto = false; renderCondTag(); }
     renderOutput(); scheduleSuggest();
     const st = $("fillstate");
     if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.` : "Nothing recognised yet — keep going, or use the options in section 2.";
