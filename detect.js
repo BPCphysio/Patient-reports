@@ -103,7 +103,7 @@ window.DETECT = (function () {
   // Pain / subjective
   const ADJ = new Set(["Dull", "Sharp", "Radiating", "Throbbing", "Shooting", "Burning", "Aching"]);
   add("Dull", "dull", "ตื้อ", "ปวดตื้อ", "หนึบ"); add("Sharp", "sharp", "แปลบ", "จี๊ด", "ปวดแปลบ");
-  add("Radiating", "radiating", "radiate", "radiates", "refer", "referred", "ร้าว", "ปวดร้าว", "ร้าวลง", "ล้าว", "ล้าวลง", "ปวดล้าว", "shooting down");
+  add("Radiating", "radiating", "radiate", "radiates", "refer", "referred", "ร้าว", "ปวดร้าว", "ร้าวลง", "ล้าว", "ล้าวลง", "ปวดล้าว", "shooting down"); add("Sharp", "จี๊ด", "จี๊ดๆ", "จี๊ดจี๊ด", "แปลบ", "เสียว");
   add("Throbbing", "throbbing", "throb", "ตุบ", "ตุ๊บ"); add("Stiffness", "stiff", "stiffness", "ฝืด", "ขยับยาก", "ข้อแข็ง");
   add("Numbness", "numb", "numbness", "ชา"); add("Shooting", "shooting", "แล่น", "ปวดแล่น");
   add("Tingling", "tingling", "tingle", "pins and needles", "เหน็บ", "ซ่า", "ยิบ"); add("Burning", "burning", "burn", "แสบ", "แสบร้อน");
@@ -134,7 +134,7 @@ window.DETECT = (function () {
     ["shoulder", "Shoulder", ["shoulder", "shoulders", "ไหล่", "หัวไหล่", "ข้อไหล่"]],
     ["elbow", "Elbow, wrist & hand", ["elbow", "elbows", "ข้อศอก", "ศอก"]],
     ["wrist", "Elbow, wrist & hand", ["wrist", "wrists", "ข้อมือ"]],
-    ["hand", "Elbow, wrist & hand", ["hand", "hands", "finger", "fingers", "thumb", "ฝ่ามือ", "นิ้วมือ", "นิ้วโป้ง", "ปวดมือ", "ที่มือ"]],
+    ["hand", "Elbow, wrist & hand", ["hand", "hands", "finger", "fingers", "thumb", "ฝ่ามือ", "นิ้วมือ", "นิ้วโป้งมือ", "ปวดมือ", "ที่มือ"]],
     ["low back", "Trunk / lumbar", ["low back", "lower back", "lumbar", "back pain", "backache", "ปวดหลัง", "หลังส่วนล่าง", "หลังล่าง", "เอว", "บั้นเอว", "ปวดเอว"]],
     ["hip", "Hip", ["hip", "hips", "groin", "buttock", "buttocks", "glute", "glutes", "สะโพก", "ขาหนีบ", "ก้น"]],
     ["thigh", "Hip", ["thigh", "thighs", "ต้นขา"]],
@@ -236,7 +236,7 @@ window.DETECT = (function () {
   add("Anterior drawer (knee)", "anterior drawer"); add("Anterior drawer (ankle)", "anterior drawer"); add("Thompson test", "thompson", "calf squeeze"); add("Windlass test", "windlass"); add("Craniocervical flexion test", "ccft", "craniocervical flexion");
   add("Adam's forward bend test", "adams", "adam's", "forward bend test"); add("Sacroiliac compression", "sacroiliac compression test"); add("Trendelenburg", "trendelenburg sign", "trendelenberg");
   add("Patellar grind", "clarke's", "clarke test", "clarkes"); add("Empty can test", "empty can", "jobe", "jobe's"); add("Full can test", "full can test"); add("Speed's test", "speeds", "speed's"); add("Yergason test", "yergason's", "yergasons");
-  const POS = /\b(positive|\+ve|\+)\s*$|\b(positive|\+ve|pos)\b|บวก|พอสิทีฟ|โพสิทีฟ|โพซิทีฟ|เป็นบวก/, NEG = /\b(negative|-ve|neg)\b|ลบ|เนกาทีฟ|เนกกาทีฟ|เป็นลบ/;
+  const POS = /\b(positive|\+ve|\+)\s*$|\b(positive|\+ve|pos)\b|บวก|พอสิทีฟ|โพสิทีฟ|โพซิทีฟ|โพสต์สิทีฟ|โพสต์ทีฟ|โพสิทิฟ|โพสิตีฟ|เป็นบวก/, NEG = /\b(negative|-ve|neg)\b|ลบ|เนกาทีฟ|เนกกาทีฟ|เป็นลบ/;
   add("No neurological deficit", "no neurological deficit", "no neuro deficit", "neuro intact", "neurologically intact", "neuro normal", "neurological examination normal", "ไม่มีอาการทางระบบประสาท", "ระบบประสาทปกติ");
   add("Dermatomes: WNLs sensory screening bilateral UE and LEs", "dermatomes normal", "dermatomes intact", "dermatome normal", "dermatome intact", "sensation intact", "sensation normal", "sensory intact", "ความรู้สึกปกติ");
   add("Myotomes: Key muscle groups grossly equal bilaterally", "myotomes normal", "myotomes intact", "myotome normal", "myotome intact", "myotomes equal");
@@ -313,7 +313,7 @@ window.DETECT = (function () {
   add("Improve muscle strength", "improve strength", "increase strength", "strengthening", "build strength", "get stronger", "เพิ่มความแข็งแรง", "เสริมความแข็งแรง", "เพิ่มแรง"); add("Improve posture", "improve posture", "correct posture", "posture correction", "ปรับท่าทาง", "แก้ท่าทาง", "ปรับบุคลิก");
   add("Improve balance and proprioception", "improve balance", "balance training", "proprioception", "ทรงตัว", "ฝึกการทรงตัว"); add("Improve scapular control", "scapular control", "scapular stability", "คุมสะบัก");
   add("Improve core stability", "core stability", "core strength", "core strengthening", "แกนกลาง", "คอร์"); add("Correct movement pattern", "movement pattern", "movement correction", "retrain movement", "ปรับการเคลื่อนไหว", "แก้รูปแบบการเคลื่อนไหว");
-  add("Return to sport", "return to sport", "back to sport", "return to play", "rts", "กลับไปเล่นกีฬา", "กลับไปวิ่ง"); add("Return to work", "return to work", "back to work", "rtw", "กลับไปทำงาน");
+  add("Return to sport", "return to sport", "back to sport", "return to play", "rts", "กลับไปเล่นกีฬา", "กลับไปวิ่ง"); add("Return to work", "return to work", "rtw", "กลับไปทำงาน");
   add("Home programme progression", "home programme progression", "home program progression", "progress home program", "progress the home programme"); add("Patient education", "education", "educate", "educated", "explain", "explained", "ให้ความรู้", "อธิบาย");
   add("Education and empowerment", "empowerment", "self management", "self-management", "ดูแลตัวเอง"); add("Prevent recurrence", "prevent recurrence", "prevention", "avoid recurrence", "stop it coming back", "ป้องกันการกลับมาเป็นซ้ำ", "ป้องกันการเป็นซ้ำ", "ไม่ให้เป็นซ้ำ");
 
@@ -337,9 +337,10 @@ window.DETECT = (function () {
   add("Forward head", "หน้ายื่น", "หัวยื่นไปข้างหน้า", "forward head posture", "head forward");
   add("Scoliosis", "scoriosis", "secoliosis", "scoliosi", "coliosi", "scoliose", "กระดูกสันหลังคดนิดหน่อย", "หลังคดนิดหน่อย", "สันหลังคดเล็กน้อย");
   add("Knee valgus", "collapsed knee", "knee collapse", "knee is collapsed", "knees collapse in", "เข่าเข้าใน", "เข่าหมุนเข้า", "เข่าเข้าไปข้างใน", "เข่าบิดเข้าใน");
-  add("Genu recurvatum", "hyperextension of your knee", "hyper extension of your knee", "knee hyperextension", "hyper a tension of your knee", "knees lock back", "เข่าแอ่นไปข้างหลัง");
+  add("Genu recurvatum", "เข่าล็อก", "เข่าล็อกเข้ามา", "knee locks back", "hyperextension of your knee", "hyper extension of your knee", "knee hyperextension", "hyper a tension of your knee", "knees lock back", "เข่าแอ่นไปข้างหลัง");
   add("Hip elevation Rt.", "สะโพกขวาสูงกว่า", "สะโพกขวามันดูสูงกว่า", "right hip is higher", "right hip higher", "right hip sits higher", "pelvis higher on the right"); add("Hip elevation Lt.", "สะโพกซ้ายสูงกว่า", "สะโพกซ้ายมันดูสูงกว่า", "left hip is higher", "left hip higher", "left hip sits higher", "pelvis higher on the left");
   add("Shoulder level Rt.>Lt.", "ไหล่ขวาสูงกว่า", "ไหล่ขวาสูงกว่าซ้าย", "right shoulder higher"); add("Shoulder level Lt.>Rt.", "ไหล่ซ้ายสูงกว่า", "ไหล่ซ้ายสูงกว่าขวา", "ไหล่ทางด้านซ้ายของเราจะสูง", "left shoulder higher", "left shoulder is higher than the right");
+  add("Lumbar hyperlordosis", "หลังแอ่น", "หลังล่างแอ่น", "เอวแอ่น", "lower back is arched", "increased lumbar curve"); add("Clavicle asymmetry", "clavicle is higher", "clavicle one side higher", "collarbone is higher", "collarbone higher on", "ไหปลาร้าสูงไม่เท่ากัน");
   add("Scapular winging", "shoulder blade sticks out", "shoulder blade wings", "สะบักปีก", "สะบักเหิม"); add("Flat feet", "feet are flat", "flat foot a bit", "เท้าแบนนิดหน่อย", "เท้าแบนกว่า");
   add("Thoracic hyperkyphosis", "upper back is rounded", "upper back is a little rounded", "rounded upper back", "hunched upper back", "hunched over");
   add("Shoulder level Rt.>Lt.", "right shoulder is higher", "right shoulder is slightly higher", "right shoulder sits higher", "left shoulder is lower", "left shoulder is a little lower", "left shoulder sits lower");
@@ -362,7 +363,8 @@ window.DETECT = (function () {
   add("Sitting", "in sitting", "sitting position", "seated", "position sitting"); add("Standing", "in standing", "standing position", "ท่ายืน"); add("Long sitting", "long sitting", "นั่งเหยียดขา");
   add("Half lying", "half lying", "semi-recumbent", "นอนกึ่งนั่ง"); add("Four point kneeling", "four point kneeling", "4 point kneeling", "quadruped", "all fours", "on all fours", "คลาน", "ท่าคลาน");
   const SESSION = /\b(60|90|45)\s*(?:min|mins|minutes|นาที)\b|\b(1|one)\s*(?:hour|hr|ชั่วโมง)\b|ชั่วโมงครึ่ง|\b1\.5\s*(?:hour|hours|hr|hrs|ชั่วโมง)\b/g;
-  const SESSIONCTX = /session|cpg|treatment time|treated for|ชั่วโมง|hour|ทำ|รักษา/;
+  const SESSIONCTX = /session|cpg|treatment (?:time|for|today)|treated for|treat you for|today'?s treatment|รักษา|ทรีตเมนต์|ครั้งนี้/;
+  const WORKCTX = /\b(work|working|per day|a day|job|desk|computer|drive|driving|sleep|sitting|sit)\b|ทำงาน|ต่อวัน|นั่ง/;
   const TT = /treatment times?\s*[:#]?\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*(?:visit|session|treatment)|(?:visit\s*(?:no\.?|number|#)?|session\s*(?:no\.?|number|#))\s*(\d+)\b(?!\s*(?:min|นาที|%|\/))|ครั้งที่\s*(\d+)/;
 
   // Exercises
@@ -553,7 +555,7 @@ window.DETECT = (function () {
       const fam = famOf(heading, line, sec);
       if (fam) {
         const sideOf = (t) => (t.match(/(Rt\.|Lt\.|Both)/) || [""])[0];
-        const idx = out.lines.findIndex((l) => l.sec === sec && famOf(l.heading, l.line, l.sec) === fam && !((heading === "Palpation" || heading === "Special test" || heading === "Muscle power" || sec === "subjective" || /range of motions$/.test(heading)) && sideOf(l.line) && sideOf(line) && sideOf(l.line) !== sideOf(line)));
+        const idx = out.lines.findIndex((l) => l.sec === sec && famOf(l.heading, l.line, l.sec) === fam && !((heading === "Palpation" || heading === "Special test" || heading === "Muscle power" || sec === "subjective" || /range of motions$/.test(heading)) && sideOf(l.line) && sideOf(line) && sideOf(l.line) !== sideOf(line) && sideOf(l.line) !== "Both" && sideOf(line) !== "Both"));
         if (idx >= 0) { if (specificity(line) > specificity(out.lines[idx].line)) out.lines[idx] = { sec, heading, line }; return; }
       }
       out.lines.push({ sec, heading, line });
@@ -608,6 +610,19 @@ window.DETECT = (function () {
     const fallbackSide = (term) => (out.side === "Both" ? "" : out.side);
     const partNear = (i, w) => { let best = null; body.forEach((b) => { const d = Math.abs(b.i - i); if (d <= (w || 40) && sameLine(low, b.i, i) && (!best || d < best.d)) best = { d, part: b.term }; }); return best ? best.part : ""; };
     const patientSaid = (i) => labelled && isPatientLine(speakerLine(low, i));
+    // Thai speech comes out of the recorder as one long line: "…ไหมคะ" then the finding. For a question
+    // check, look only at the clause around the hit (between polite particles), not the whole line.
+    const TH_END = /ค่ะ|คะ|ครับ|นะคะ|นะ|เนอะ|โอเค|ใช่ไหม|ไหม/g;
+    const qLine = (i) => {
+      const ln = speakerLine(low, i);
+      if (ln.length <= 160 || !/[ก-๙]/.test(ln)) return ln;
+      const st = low.lastIndexOf("\n", i) + 1;
+      let a = st, m; TH_END.lastIndex = 0;
+      const before = low.slice(st, i); while ((m = TH_END.exec(before))) a = st + m.index + m[0].length;
+      const rest = low.slice(i); TH_END.lastIndex = 0; const m2 = TH_END.exec(rest);
+      const b = m2 ? i + m2.index + m2[0].length : Math.min(low.length, i + 160);
+      return low.slice(a, b);
+    };
     const counts = {}; body.forEach((b) => { const r = REGION_OF[b.term]; counts[r] = (counts[r] || 0) + 1; });
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (top) out.region = top[0];
@@ -628,7 +643,7 @@ window.DETECT = (function () {
     const EXAM_INSTR = /\b(don'?t let me|do not let me|hold it|against my hand|i'?ll (?:lift|move|bend|press|push|pull|squeeze|turn|tilt|rotate|stretch)|i'?m going to|let me (?:move|bend|check|press|feel)|tell me if|tell me where|does it hurt|is that sore|for me[.,]|now (?:lift|bend|turn|tilt|push|pull|straighten|slide|lean|look|squeeze))\b|กด|ตรงนี้|อย่าให้|เจ็บไหม/;
     const examReply = (i) => { const ln = speakerLine(low, i); if (!labelled || !isPatientLine(ln)) return false; const pv = prevNonEmptyLine(i); return !isPatientLine(pv) && (EXAM_INSTR.test(pv) || LAY.MMT_CONTEXT.test(pv) || LAY.TESTS.some(([ph]) => ph.some((p) => pv.includes(norm(p)))) || LAY.MOVE.some(([ph]) => ph.some((p) => pv.includes(norm(p)))) || LAY.FUNC.some(([ph]) => ph.some((p) => pv.includes(norm(p))))); };
     const complaintOk = (i) => (!labelled || patientSaid(i) || speakerLine(low, i).length > 220) && !examReply(i);
-    const painHits = pick(scan(entries(V.PAIN_TYPE), low)).filter((h) => !overlaps(h, phraseHits) && !negated(low, h.i) && !isQuestion(speakerLine(low, h.i)) && !inExamPart(low, h.i) && complaintOk(h.i) && !HISTORY.test(sentenceOf(h.i)) && !(h.term === "Numbness" && /^ชา(ร์|ว|ย|ม)/.test(low.slice(h.i, h.i + 4)))); heard(painHits);
+    const painHits = pick(scan(entries(V.PAIN_TYPE), low)).filter((h) => !overlaps(h, phraseHits) && !negated(low, h.i) && !isQuestion(qLine(h.i)) && !inExamPart(low, h.i) && complaintOk(h.i) && !HISTORY.test(sentenceOf(h.i)) && !(h.term === "Numbness" && /^ชา(ร์|ว|ย|ม)/.test(low.slice(h.i, h.i + 4)))); heard(painHits);
     const partsUsed = new Set();
     { const hm = /\bheadaches?\b|ปวดหัว|ปวดศีรษะ|ไมเกรน/g; let m; while ((m = hm.exec(low))) { if (!isQuestion(speakerLine(low, m.index)) && complaintOk(m.index) && !negated(low, m.index) && !HISTORY.test(speakerLine(low, m.index))) { push("subjective", "", "Headache"); break; } } }
     painHits.forEach((h) => {
@@ -640,7 +655,7 @@ window.DETECT = (function () {
     });
     body.forEach((h) => {
       const c = ctx(low, h.i, h.len, 25);
-      if (!PAIN.test(c) || partsUsed.has(h.term) || overlaps(h, phraseHits) || inExamPart(low, h.i) || isQuestion(speakerLine(low, h.i)) || !complaintOk(h.i)) return;
+      if (!PAIN.test(c) || partsUsed.has(h.term) || overlaps(h, phraseHits) || inExamPart(low, h.i) || isQuestion(qLine(h.i)) || !complaintOk(h.i)) return;
       if (painHits.some((d) => Math.abs(d.i - h.i) < 50)) return;
       partsUsed.add(h.term);
       push("subjective", "", "Pain at " + withSide(sideNear(low, h.i, h.len), h.term));
@@ -661,6 +676,15 @@ window.DETECT = (function () {
 
     // VAS — only a value written as n/10
     const vm = VAS.exec(low); if (vm) { const n = vm[1] || vm[2] || vm[3]; if (n && +n <= 10) { out.vas = n; push("objective", "", `VAS ${n}/10`); } }
+    if (!out.vas && !labelled) {
+      const q = /\b(?:zero to ten|0 to 10|out of ten|out of 10|scale of|nought to ten)\b|ศูนย์ถึงสิบ|0 ถึง 10/g; let qm;
+      while ((qm = q.exec(low))) {
+        const after = low.slice(qm.index + qm[0].length, qm.index + qm[0].length + 90);
+        const m = /\b(\d{1,2})\b/.exec(after); if (!m || +m[1] > 10) continue;
+        const worst = /worst|most of the pain|มากที่สุด/.test(low.slice(Math.max(0, qm.index - 40), qm.index + qm[0].length + 60));
+        out.vas = m[1]; push("objective", "", worst ? `VAS worst ${m[1]}/10` : `VAS ${m[1]}/10`); break;
+      }
+    }
     if (!out.vas && labelled) {
       const q = /\b(?:zero to ten|0 to 10|out of ten|out of 10|pain scale|scale of|nought to ten|zero being no pain)\b|ศูนย์ถึงสิบ|0 ถึง 10|คะแนน/g; let qm;
       while ((qm = q.exec(low))) {
@@ -677,7 +701,7 @@ window.DETECT = (function () {
     const obsTerms = [...V.OBSERVATION, ...(V.OBSERVATION_BY_REGION[R] || [])];
     const IMPROVING = /^\s*(ลดลง|น้อยลง|ดีขึ้น|หาย|decreas\w*|reduc\w*|less|better|improv\w*|resolv\w*|gone)/i;
     const GOALISH = /(ลด|เพิ่ม|reduce|decrease|improve|increase|prevent)\s*$/;
-    const obs = pick(scan(entries(obsTerms), low)).filter((h) => !negated(low, h.i) && !isQuestion(speakerLine(low, h.i)) && !IMPROVING.test(low.slice(h.i + h.len, h.i + h.len + 14)) && !GOALISH.test(low.slice(Math.max(0, h.i - 10), h.i)) && !patientSaid(h.i) && !/^\s*(plan|treatment(?!\s+times?)|gym|home)/i.test(speakerLine(low, h.i).slice(0, 18))); heard(obs);
+    const obs = pick(scan(entries(obsTerms), low)).filter((h) => !negated(low, h.i) && !isQuestion(qLine(h.i)) && !IMPROVING.test(low.slice(h.i + h.len, h.i + h.len + 14)) && !GOALISH.test(low.slice(Math.max(0, h.i - 10), h.i)) && !patientSaid(h.i) && !/^\s*(plan|treatment(?!\s+times?)|gym|home)/i.test(speakerLine(low, h.i).slice(0, 18))); heard(obs);
     obs.forEach((h) => {
       const c = ctx(low, h.i, h.len, 40);
       if (h.term === "Redness" && !/\b(skin|red|redness|erythema)\b|แดง/.test(c)) return;
@@ -700,7 +724,7 @@ window.DETECT = (function () {
       let ms = muscles.filter((m) => m.i > h.i && m.i < stop && sameLine(low, h.i, m.i) && !deniedAfter(m));
       if (!ms.length) { let best = null; muscles.forEach((m) => { const d = h.i - m.i; if (d > 0 && d <= 30 && sameLine(low, m.i, h.i) && (!best || d < best.d)) best = m; }); if (best) ms = [best]; }
       if (!ms.length && !EXAM.test(ctx(low, h.i, h.len, 50))) return;
-      if (isQuestion(speakerLine(low, h.i))) return;
+      if (isQuestion(qLine(h.i))) return;
       if (h.term === "Warmth" && !ms.length) return;
       if (h.term === "Swelling" && !ms.length) return; // already an observation line
       out.heard.add(h.term);
@@ -732,7 +756,7 @@ window.DETECT = (function () {
       if (layMove && /\b(because|that's why|which is why|what we call|the reason|explain|that means|this means|the tendon that|the muscle that|the disc)\b/.test(sentenceOf(h.i))) return;
       if (layMove && EXCTX.test(speakerLine(low, h.i)) && !ROMCTX.test(seg)) return;
       const c = /limit|full|เต็ม|จำกัด|ไม่สุด|ได้ไม่|ปวด|pain|ติด|ตึง|tight|normal|wnl/.test(seg) ? seg : (layMove ? replyAfter(h.i) : "");
-      if (layMove && isQuestion(speakerLine(low, h.i)) === false && patientSaid(h.i)) return;
+      if (layMove && isQuestion(qLine(h.i)) === false && patientSaid(h.i)) return;
       const lineStart = low.lastIndexOf("\n", h.i) + 1, beforeOnLine = low.slice(lineStart, h.i);
       if (/muscle power|mmt|strength|กำลัง|grade|weak/.test(beforeOnLine) && !ROMCTX.test(seg)) return;
       if (/^\s*(treatment(?!\s+times?)|gym|home|exercise|plan)/i.test(low.slice(lineStart, lineStart + 18))) return;
@@ -777,7 +801,7 @@ window.DETECT = (function () {
     // Muscle power
     const grades = []; let gm; GRADE.lastIndex = 0;
     while ((gm = GRADE.exec(low))) grades.push({ i: gm.index, len: gm[0].length, g: gm[1] || gm[2], used: false });
-    const strHits = pick(scan(entries(V.STRENGTH.filter((s) => !/^Grade/.test(s))), low)).filter((h) => !negated(low, h.i) && !isQuestion(speakerLine(low, h.i)) && !patientSaid(h.i));
+    const strHits = pick(scan(entries(V.STRENGTH.filter((s) => !/^Grade/.test(s))), low)).filter((h) => !negated(low, h.i) && !isQuestion(qLine(h.i)) && !patientSaid(h.i));
     strHits.forEach((h) => {
       out.heard.add(h.term);
       let where = ""; muscles.forEach((m) => { if (Math.abs(m.i - h.i) <= 40 && sameLine(low, m.i, h.i)) where = where || m.term; });
@@ -930,6 +954,18 @@ window.DETECT = (function () {
       push("objective", "Muscle power", grade === "weakness" ? `Weakness at ${withSide(s, muscle)}` : `${withSide(s, muscle)} ${grade}`);
     });
 
+    // "this is the hip flexor testing — the right side is good and the left side is weak"
+    {
+      const re = /\b(hip flexor|hip abductor|hip extensor|quadriceps|quad|hamstring|gluteus medius|glute|calf|core|rotator cuff|deltoid|biceps|triceps|neck flexor|deep neck flexor)s?\b[^\n]{0,25}\b(?:testing|test|strength|power)\b[^\n]{0,70}?\b(right|left) side is (?:the )?(good|strong|fine|normal|okay|weak|weaker)\b(?:[\s\S]{0,40}?\b(left|right) side is (?:the )?(weak|weaker|good|strong|fine)\b)?/g; let m;
+      const NAME = { "hip flexor": "iliopsoas", "hip abductor": "gluteus medius", "hip extensor": "gluteus maximus", quad: "quadriceps", glute: "gluteus maximus", calf: "gastrocnemius", core: "transversus abdominis", "neck flexor": "deep neck flexor" };
+      while ((m = re.exec(low))) {
+        const muscle = NAME[m[1]] || m[1];
+        const sides = [[m[2], m[3]], [m[4], m[5]]].filter((x) => x[0]);
+        sides.forEach(([sd, q]) => { const S2 = sd === "right" ? "Rt." : "Lt."; if (/weak/.test(q)) push("objective", "Muscle power", `Weakness at ${S2} ${muscle}`); else push("objective", "Muscle power", `${S2} ${muscle} Grade 5/5`); });
+        out.heard.add(muscle);
+      }
+    }
+
     // Neurological
     pick(scan(entries(V.NEURO_PHRASES), low)).forEach((h) => { out.heard.add(h.term); push("objective", "Neurological examination", h.term); });
     if (NEUROCTX.test(low)) pick(scan(entries(V.MYOTOMES), low)).forEach((h) => { if (NEUROCTX.test(ctx(low, h.i, h.len, 40))) { out.heard.add(h.term); push("objective", "Myotome", h.term); } });
@@ -940,7 +976,7 @@ window.DETECT = (function () {
       const c = ctx(low, h.i, h.len, 80);
       if (GENERIC_DX.has(h.term) && !DXCTX.test(c)) return;
       if (!gated(low, h, R)) return;
-      if (patientSaid(h.i) || isQuestion(speakerLine(low, h.i))) return;
+      if (patientSaid(h.i) || isQuestion(qLine(h.i))) return;
       if (HISTORY.test(clause(low, h.i, h.len)) && !/^\s*(analysis|diagnosis|impression|dx)/i.test(speakerLine(low, h.i))) return;
       if (dxSeen.has(h.term)) return; dxSeen.add(h.term);
       out.heard.add(h.term);
@@ -1009,7 +1045,7 @@ window.DETECT = (function () {
     pick(scan(entries(V.POST_TREATMENT || []), low)).filter((h) => /\b(after|post|treatment|session|now)\b|หลัง|ตอนนี้|หลังจาก/.test(sentenceOf(h.i)) && !HIST_SENT.test(sentenceOf(h.i))).forEach((h) => { out.heard.add(h.term); push("treatment", "", h.term); });
     let sm; SESSION.lastIndex = 0;
     while ((sm = SESSION.exec(low))) {
-      const c = ctx(low, sm.index, sm[0].length, 30); if (!SESSIONCTX.test(c)) continue;
+      const c = ctx(low, sm.index, sm[0].length, 30); if (!SESSIONCTX.test(c) || WORKCTX.test(sentenceOf(sm.index))) continue;
       const mins = sm[1] ? sm[1] : /1\.5|ครึ่ง/.test(sm[0]) ? "90" : "60";
       const t = mins === "45" ? "CPG 45 mins" : `Session ${mins} minutes`;
       if (V.SESSION_LENGTHS.includes(t)) { out.heard.add(t); push("treatment", "", t); }

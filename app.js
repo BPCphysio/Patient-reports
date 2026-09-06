@@ -310,9 +310,15 @@
     const P = V.REGION_PROFILE[S.region]; if (!P || S.region === "General / other") return;
     const t = target("objective", "Special test"); if (!t || !t[0]) return;
     const field = t[0], heading = t[1] || "";
+    const hit = S.condition && SG ? findCondition(currentCondition()) : null;
+    const known = new Set(V.SPECIAL_TESTS);
+    // the tests physios record for this condition go first; the rest of the region's usual tests follow
+    const fix = (n) => (S.region === "Ankle & foot" && n === "Anterior drawer (knee)" ? "Anterior drawer (ankle)" : n);
+    const condTests = hit && hit[1].t ? hit[1].t.map(fix).filter((n) => known.has(n) && P.tests.includes(n)) : [];
+    const testList = [...condTests, ...P.tests.filter((n) => !condTests.includes(n))];
     const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /(\+ve|-ve|___ve)\s*$/.test(l)).map(testName));
     S.prefilled = S.prefilled || new Set();
-    P.tests.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}: ${BLANK}ve`, heading, true); S.prefilled.add(name); });
+    testList.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}: ${BLANK}ve`, heading, true); S.prefilled.add(name); });
     renderOutput();
   }
   function removeBlankTest(field, line) {
@@ -553,12 +559,15 @@
     const exGroups = P.exercise_groups.filter((g) => V.EXERCISES[g]);
     // the group that fits the condition opens first: an ACL tear opens the ligament rehab list, not the neck
     const wantGroup = S.condition && /\b(acl|pcl|mcl|lcl|aclr)\b|ligament|meniscus|meniscal|reconstruction|post.?op|arthroscop/i.test(S.condition) ? "Knee — ACL & ligament rehab" : "";
-    let group = exGroups.includes(wantGroup) ? wantGroup : exGroups[0], dose = V.EX_DOSAGE[0];
+    const condHit = S.condition && SG ? findCondition(currentCondition()) : null;
+    const usualDose = condHit && condHit[1].m && condHit[1].m.dose ? condHit[1].m.dose : "";
+    const doses = usualDose && !V.EX_DOSAGE.includes(usualDose) ? [usualDose, ...V.EX_DOSAGE] : V.EX_DOSAGE;
+    let group = exGroups.includes(wantGroup) ? wantGroup : exGroups[0], dose = usualDose || V.EX_DOSAGE[0];
     const row = document.createElement("div"); row.className = "row2";
     const exWrap = document.createElement("div");
     const redraw = () => { exWrap.innerHTML = ""; exWrap.appendChild(chips(V.EXERCISES[group], field, "Exercise", (e) => exLine(e, dose))); };
     const groupSel = selectEl(exGroups, (e) => { group = e.target.value; redraw(); }); groupSel.value = group; row.appendChild(groupSel);
-    row.appendChild(selectEl(V.EX_DOSAGE, (e) => { dose = e.target.value; redraw(); }));
+    const doseSel = selectEl(doses, (e) => { dose = e.target.value; redraw(); }); doseSel.value = dose; row.appendChild(doseSel);
     b.appendChild(row); b.appendChild(exWrap); redraw(); host.appendChild(d);
 
     [d, b] = details("Session & position");
