@@ -135,6 +135,7 @@
       // the chosen condition is already in the box; do not add it again with a side
       if (l.sec === "analysis" && S.condition && line.replace(/^(Rt\.|Lt\.|Both) /, "").toLowerCase() === S.condition.toLowerCase()) return;
       if (S.format === "New patient's record" && t[0] === "Pain scale") line = res.vas || line;
+      if (l.sec === "treatment" && !t[1]) line = fillTreatmentBlanks(line);
       (wanted[t[0]] = wanted[t[0]] || []).push({ heading: t[1] || "", line });
     });
     const key = (x) => x.heading + "" + x.line;
@@ -272,13 +273,19 @@
     "Low back & pelvis": "Trunk / lumbar", "Hip & thigh": "Hip", "Knee": "Knee", "Ankle & foot": "Ankle & foot" };
   const dxField = () => (S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis");
   const CONDITION_REGION = [
+    [/\b(acl|pcl|mcl|lcl|aclr)\b|meniscus|meniscal|patell|knee|itb|runner'?s|jumper'?s|osgood|chondromalacia|baker|genu|tibial plateau/i, "Knee"],
+    [/ankle|atfl|cfl|achilles|plantar|heel|shin|foot|toe|hallux|calf|gastroc|soleus|peroneal|tibialis|bunion|morton/i, "Ankle & foot"],
+    [/shoulder|rotator|supraspinatus|infraspinatus|subscap|impingement|frozen|adhesive|labr|slap|ac joint|biceps tend|bursitis of the shoulder|glenohumeral|scapul/i, "Shoulder"],
+    [/\bhip\b|gluteal|glute|trochanter|femoroacetabular|\bfai\b|hamstring|groin|adductor|quadriceps strain|thigh/i, "Hip"],
+    [/elbow|epicondyl|tennis|golfer|wrist|carpal|de quervain|trigger finger|hand|finger|thumb|tfcc|forearm|cubital/i, "Elbow, wrist & hand"],
     [/scoliosis|kyphosis|thoracic|rib|costo/i, "Thoracic spine"],
     [/office syndrome|upper cross|myofascial|mps|text neck|headache|torticollis|whiplash|cervical|neck/i, "Neck / cervical"],
     [/lower cross|low back|lumbar|disc|hnp|sciatic|spondyl|stenosis|sij|sacroiliac|coccy|pelvic|piriformis/i, "Trunk / lumbar"],
     [/postur/i, "Thoracic spine"],
   ];
   function regionForCondition(name) {
-    for (const [group, list] of Object.entries(V.DIAGNOSES)) if (list.includes(name) && GROUP_REGION[group]) return GROUP_REGION[group];
+    const lc = name.toLowerCase();
+    for (const [group, list] of Object.entries(V.DIAGNOSES)) if (list.some((d) => d.toLowerCase() === lc) && GROUP_REGION[group]) return GROUP_REGION[group];
     for (const [re, region] of CONDITION_REGION) if (re.test(name)) return region;
     return DETECT.run(name, S.region).region || "General / other";
   }
@@ -372,6 +379,7 @@
   }
   function findCondition(q) {
     if (!SG || !q) return null;
+    const direct = SG_NAME[String(q).toLowerCase()]; if (direct && SG.conditions[direct]) return [direct, SG.conditions[direct]];
     // try the name as typed, without its bracket, and the bracket's own contents ("(MPS)")
     const forms = [q, q.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim()];
     const inside = q.match(/\(([^)]+)\)/); if (inside) forms.push(inside[1].trim());
@@ -475,19 +483,81 @@
     vas.onclick = () => append(field, vasLine(), ""); b.appendChild(vas); host.appendChild(d);
   }
 
+  // ---------- what BPC physios usually write for a modality ----------
+  // suggest.js carries, per condition, the most common MHz / w/cm2 / V / mins /
+  // kg / Hz and area written in the Treatment box for each modality, plus the
+  // clinic-wide norm. A modality line is filled from the condition first, then
+  // from every condition of the same region, then from the clinic as a whole.
+  const REGION_USUAL = {};
+  function regionUsual(region) {
+    if (!SG || REGION_USUAL[region]) return REGION_USUAL[region] || {};
+    const acc = {};
+    Object.entries(SG.conditions).forEach(([k, v]) => {
+      if (!v.m || regionForCondition(dxDisplay(k)) !== region) return;
+      Object.entries(v.m).forEach(([mod, fields]) => {
+        if (mod === "position") { const p = acc.position = acc.position || {}; p[fields] = (p[fields] || 0) + v.n; return; }
+        const slot = acc[mod] = acc[mod] || {};
+        Object.entries(fields).forEach(([f, val]) => { const c = slot[f] = slot[f] || {}; c[val] = (c[val] || 0) + v.n; });
+      });
+    });
+    const out = {};
+    Object.entries(acc).forEach(([mod, fields]) => {
+      if (mod === "position") { out.position = Object.entries(fields).sort((x, y) => y[1] - x[1])[0][0]; return; }
+      out[mod] = {}; Object.entries(fields).forEach(([f, counts]) => { out[mod][f] = Object.entries(counts).sort((x, y) => y[1] - x[1])[0][0]; });
+    });
+    return (REGION_USUAL[region] = out);
+  }
+  function usualFor(modality) {
+    if (!SG) return {};
+    const hit = S.condition ? findCondition(currentCondition()) : null;
+    const own = hit && hit[1].m ? hit[1].m : {};
+    const reg = isGeneral() ? {} : regionUsual(S.region);
+    const all = SG.usual || {};
+    const f = Object.assign({}, all[modality] || {}, reg[modality] || {}, own[modality] || {});
+    f.position = own.position || reg.position || all.position || "";
+    return f;
+  }
+  const POSITION_NAME = { supine: "Supine lying", prone: "Prone lying", "side lying": "Side lying", sitting: "Sitting", standing: "Standing", "half lying": "Half lying", "long sitting": "Long sitting" };
+  // fill the ___ slots of a modality template with the usual values; slots with no data stay ___
+  function fillUsual(line, modality) {
+    const u = usualFor(modality); if (!u || !Object.keys(u).length) return line;
+    let o = line;
+    const put = (re, val, fmt) => { if (val && re.test(o) && /___/.test(o.match(re)[0])) o = o.replace(re, (m) => m.replace("___", fmt ? fmt(val) : val)); };
+    put(/___ MHz/, u.mhz); put(/___ w\/cm2/, u.w); put(/Stim ___ V|___ V\b/, u.v); put(/___ Hz/, u.hz); put(/___ kg/, u.kg); put(/___ J\/cm2/, u.j);
+    put(/___ mins? per point|___ mins?\b|___ min\b/, u.min);
+    put(/grade ___/, u.grade);
+    const area = u.area ? withSide(u.area) : "";
+    if (area) { o = o.replace(/Area: ___/, "Area: " + area).replace(/\bon ___/, "on " + area).replace(/^(Massage|Stretching|Passive stretch|Stretching exercise|Cupping|Taping): ___/, "$1: " + area).replace(/\bat ___/, "at " + area); }
+    if (u.position && /Position: ___/.test(o)) o = o.replace("Position: ___", "Position: " + (POSITION_NAME[u.position] || u.position));
+    return o;
+  }
+  const modalityLine = (name) => fillUsual(V.TREATMENT_MODALITIES[name], name);
+  // a line the detector wrote from the notes keeps every number it heard; only the blanks left are filled
+  function fillTreatmentBlanks(line) {
+    if (!/___/.test(line)) return line;
+    for (const [name, tpl] of Object.entries(V.TREATMENT_MODALITIES)) {
+      const head = tpl.split(/  |: /)[0];
+      if (line.startsWith(head)) return fillUsual(line, name);
+    }
+    return line;
+  }
   function treatmentExtras(host, field) {
     const P = profile();
     let [d, b] = details(isGeneral() ? "Modality — only what BPC has" : `Modality — for the ${S.region.toLowerCase()}`, true);
     const names = P.modalities.filter((n) => V.TREATMENT_MODALITIES[n]);
-    b.appendChild(chips(names, field, "", (n) => V.TREATMENT_MODALITIES[n])); showAllLink(b); host.appendChild(d);
+    b.appendChild(chips(names, field, "", (n) => modalityLine(n)));
+    if (SG) { const p = document.createElement("p"); p.className = "sub"; p.textContent = S.condition ? `Filled with what BPC physios usually write for ${S.condition} — change anything that differed today.` : "Numbers and areas are the clinic's usual for this region — change anything that differed today."; b.appendChild(p); }
+    showAllLink(b); host.appendChild(d);
 
     [d, b] = details(isGeneral() ? "Exercise" : `Exercise — ${S.region.toLowerCase()}`, !isGeneral());
     const exGroups = P.exercise_groups.filter((g) => V.EXERCISES[g]);
-    let group = exGroups[0], dose = V.EX_DOSAGE[0];
+    // the group that fits the condition opens first: an ACL tear opens the ligament rehab list, not the neck
+    const wantGroup = S.condition && /\b(acl|pcl|mcl|lcl|aclr)\b|ligament|meniscus|meniscal|reconstruction|post.?op|arthroscop/i.test(S.condition) ? "Knee — ACL & ligament rehab" : "";
+    let group = exGroups.includes(wantGroup) ? wantGroup : exGroups[0], dose = V.EX_DOSAGE[0];
     const row = document.createElement("div"); row.className = "row2";
     const exWrap = document.createElement("div");
     const redraw = () => { exWrap.innerHTML = ""; exWrap.appendChild(chips(V.EXERCISES[group], field, "Exercise", (e) => exLine(e, dose))); };
-    row.appendChild(selectEl(exGroups, (e) => { group = e.target.value; redraw(); }));
+    const groupSel = selectEl(exGroups, (e) => { group = e.target.value; redraw(); }); groupSel.value = group; row.appendChild(groupSel);
     row.appendChild(selectEl(V.EX_DOSAGE, (e) => { dose = e.target.value; redraw(); }));
     b.appendChild(row); b.appendChild(exWrap); redraw(); host.appendChild(d);
 
@@ -702,6 +772,94 @@
     } finally { btn.classList.remove("busy"); }
   }
 
+  // ---------- a recording of the session -> text, on this device ----------
+  // Whisper runs inside the browser (transformers.js). The model is fetched once
+  // from the Hugging Face CDN and cached by the browser; the audio never leaves
+  // the device. English: whisper-base.en (about 75 MB). Thai or mixed:
+  // whisper-small, multilingual (about 250 MB). WebGPU when the device has it,
+  // otherwise plain WebAssembly.
+  const ASR_LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
+  const ASR_MODELS = { "en-US": "onnx-community/whisper-base.en", "th-TH": "onnx-community/whisper-small" };
+  const asr = { model: "", pipe: null, loading: null, busy: false };
+  const asrState = (t) => { const el = $("asrstate"); if (el) el.textContent = t; };
+  async function getAsr(lang) {
+    const model = ASR_MODELS[lang] || ASR_MODELS["en-US"];
+    if (asr.pipe && asr.model === model) return asr.pipe;
+    if (asr.loading && asr.model === model) return asr.loading;
+    asr.model = model; asr.pipe = null;
+    asr.loading = (async () => {
+      const T = await import(ASR_LIB);
+      T.env.allowLocalModels = false;
+      const seen = {};
+      const progress_callback = (p) => {
+        if (p.status !== "progress" || !p.file) return;
+        seen[p.file] = [p.loaded || 0, p.total || 0];
+        const l = Object.values(seen).reduce((s, x) => s + x[0], 0), t = Object.values(seen).reduce((s, x) => s + x[1], 0);
+        if (t) asrState(`Downloading the speech model — ${Math.min(99, Math.round(l / t * 100))}% (once only; it stays on this device)`);
+      };
+      // decide the device before the first load: once a WebGPU attempt fails, the runtime
+      // cannot start WebAssembly on the same page any more
+      let gpu = false;
+      try { gpu = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (e) { gpu = false; }
+      if (gpu) return await T.pipeline("automatic-speech-recognition", model, { device: "webgpu", dtype: { encoder_model: "fp32", decoder_model_merged: "q4" }, progress_callback });
+      return await T.pipeline("automatic-speech-recognition", model, { device: "wasm", dtype: "q8", progress_callback });
+    })();
+    try { asr.pipe = await asr.loading; } finally { asr.loading = null; }
+    return asr.pipe;
+  }
+  // any audio the browser can play -> mono samples at 16 kHz, which is what Whisper listens to
+  async function decodeAudio(file) {
+    const buf = await file.arrayBuffer();
+    const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const probe = new Ctx(1, 16000, 16000);
+    const audio = await probe.decodeAudioData(buf);
+    if (audio.sampleRate === 16000 && audio.numberOfChannels === 1) return audio.getChannelData(0);
+    const off = new Ctx(1, Math.ceil(audio.duration * 16000), 16000);
+    const src = off.createBufferSource(); src.buffer = audio; src.connect(off.destination); src.start(0);
+    const out = await off.startRendering();
+    return out.getChannelData(0);
+  }
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  async function transcribeAudio(file) {
+    if (asr.busy) { toast("Still working on the last recording — one at a time"); return; }
+    const btn = $("audiobtn"); btn.classList.add("busy"); asr.busy = true;
+    const lang = S.lang || "th-TH";
+    try {
+      asrState("Reading the recording…");
+      const samples = await decodeAudio(file);
+      const total = samples.length / 16000;
+      if (total < 0.5) throw new Error("That file has no sound in it");
+      asrState("Loading the speech model…");
+      const pipe = await getAsr(lang);
+      const ta = $("transcript");
+      const header = `[From recording — ${file.name}${lang === "th-TH" ? ", Thai" : ", English"}]`;
+      ta.value = (ta.value.replace(/\s+$/, "") ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + header + "\n";
+      if (!$("trbox").open) $("trbox").open = true;
+      const SEG = 240 * 16000;   // four minutes at a time, so the text appears as it goes
+      // timestamps on: that is the mode where the 30-second pieces are stitched together correctly,
+      // and each piece becomes its own line so the reader can work sentence by sentence
+      const opts = { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true };
+      if (!/\.en$/.test(asr.model)) { opts.language = lang === "th-TH" ? "thai" : "english"; opts.task = "transcribe"; }
+      const t0 = Date.now();
+      for (let start = 0; start < samples.length; start += SEG) {
+        const done = start / 16000;
+        asrState(`Transcribing… ${mmss(done)} of ${mmss(total)}${done ? ` (about ${mmss(Math.max(0, (Date.now() - t0) / 1000 / done * (total - done)))} left)` : ""}`);
+        const seg = samples.subarray(start, Math.min(samples.length, start + SEG));
+        const res = await pipe(seg, opts);
+        const parts = ((res && res.chunks) || []).map((c) => (c.text || "").trim()).filter(Boolean);
+        const text = parts.length ? parts.join("\n") : ((res && res.text) || "").trim();
+        if (text) { ta.value = ta.value.replace(/\s+$/, "") + "\n" + text; ta.dispatchEvent(new Event("input")); }
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      asrState(`Recording transcribed (${mmss(total)}) — read it through; speech recognition mishears names, numbers and Thai-English switches.`);
+      setTimeout(() => asrState(""), 12000);
+      toast("Recording transcribed");
+    } catch (err) {
+      console.error(err); asrState("");
+      toast(/decod/i.test(String(err && err.message)) ? "That file could not be opened as audio — try an .m4a, .mp3 or .wav" : (err && err.message) || "The recording could not be transcribed");
+    } finally { btn.classList.remove("busy"); asr.busy = false; }
+  }
+
   // ---------- transcript panel ----------
   function renderNums() {
     const nums = numbersHeard($("transcript").value || ""); const host = $("nums");
@@ -714,13 +872,25 @@
 
   // ---------- condition search ----------
   const ALL_DX = Object.values(V.DIAGNOSES).flat();
+  // the conditions BPC physios actually wrote in Jane (suggest.js), shown the way they wrote them
+  const ACRONYM = /\b(acl|aclr|pcl|mcl|lcl|mpfl|plc|sij|hnp|mps|itb|tmj|oa|ra|ddd|slap|dvt|tfcc|pfps|cts|ue|le|rom|mri|c[1-7]|t[1-9]|t1[0-2]|l[1-5]|s[1-2]|c-spine|l-spine|t-spine)\b/gi;
+  const dxDisplay = (k) => { let s = String(k).replace(/\s*\([^)]*$/, "").replace(/^[\s\-–•.]+/, "").replace(/\s+/g, " ").trim(); if (!s) return ""; s = s.charAt(0).toUpperCase() + s.slice(1); return s.replace(ACRONYM, (m) => m.toUpperCase()); };
+  const SG_NAME = {};   // shown name -> suggest.js key
+  const CHART_DX = SG ? Object.entries(SG.conditions).map(([k, v]) => [dxDisplay(k), k, v.n]).filter(([d]) => d.length >= 3) : [];
+  CHART_DX.forEach(([d, k]) => { SG_NAME[d.toLowerCase()] = k; });
   function renderDx() {
     const q = ($("dxq").value || "").trim().toLowerCase(); const host = $("dxhits"); host.innerHTML = "";
     if (!q) return;
-    const hits = ALL_DX.filter((d) => d.toLowerCase().includes(q)).slice(0, 9);
+    const toks = q.split(/\s+/).filter(Boolean);
+    const matches = (d) => { const l = d.toLowerCase(); return toks.every((t) => l.includes(t)); };
+    const seen = new Set(); const hits = [];
+    const addHit = (d, n) => { const l = d.toLowerCase(); if (seen.has(l)) return; seen.add(l); hits.push([d, n]); };
+    // the library first (a name that starts with what was typed before one that merely contains it), then the clinic's charts by how often they wrote it
+    ALL_DX.filter(matches).sort((x, y) => (y.toLowerCase().startsWith(q) ? 1 : 0) - (x.toLowerCase().startsWith(q) ? 1 : 0)).forEach((d) => addHit(d, 0));
+    CHART_DX.filter(([d]) => matches(d)).sort((x, y) => y[2] - x[2]).forEach(([d, k, n]) => addHit(d, n));
     const target = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
     if (!hits.length) { host.innerHTML = `<span class="hint">Not in the library — type it straight into ${target}. That is always allowed.</span>`; return; }
-    hits.forEach((h) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = h; b.onclick = () => { setCondition(h); $("dxq").value = ""; renderDx(); }; host.appendChild(b); });
+    hits.slice(0, 14).forEach(([h, n]) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = h; if (n) b.title = `Written in ${n} BPC charts`; b.onclick = () => { setCondition(h); $("dxq").value = ""; renderDx(); }; host.appendChild(b); });
   }
 
   // ---------- init ----------
@@ -753,6 +923,7 @@
   $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => { S.lang = b.dataset.l; $("langs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); });
   wireMic($("trmic"));
   $("photo").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; if (files.length) readPhotos(files); };
+  $("audio").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) transcribeAudio(f); };
   $("lastnote").addEventListener("paste", () => setTimeout(useLastNote, 50));
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };

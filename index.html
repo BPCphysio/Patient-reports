@@ -196,19 +196,21 @@
   <details class="transcript" id="trbox" open>
     <summary id="trsum">Session notes — paste, speak, or photograph the patient's chart</summary>
     <div class="body">
-      <p class="hint">Three ways in, Thai or English or both: <b>paste</b> the session transcript, press <b>Dictate</b> and speak, or add a <b>photo</b> of the chart the patient filled in. Everything mentioned here fills section 2 by itself — check it, then copy.<br>วางข้อความ พูดใส่ช่องนี้ หรือถ่ายรูปแบบฟอร์มที่คนไข้กรอก — สิ่งที่พูดถึงจะถูกใส่ในข้อ 2 ให้อัตโนมัติ</p>
+      <p class="hint">Four ways in, Thai or English or both: <b>paste</b> the session transcript, add the <b>recording</b> of the session, press <b>Dictate</b> and speak, or add a <b>photo</b> of the chart the patient filled in. Everything mentioned here fills section 2 by itself — check it, then copy.<br>วางข้อความ เพิ่มไฟล์เสียงที่อัดไว้ พูดใส่ช่องนี้ หรือถ่ายรูปแบบฟอร์มที่คนไข้กรอก — สิ่งที่พูดถึงจะถูกใส่ในข้อ 2 ให้อัตโนมัติ</p>
       <div class="fld">
         <div class="head">
           <div class="langs" id="langs"><button data-l="th-TH" class="on">Thai</button><button data-l="en-US">English</button></div>
           <div class="tools">
+            <label class="mic photo" id="audiobtn">🎧 Recording<input type="file" id="audio" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.mp4" hidden></label>
             <label class="mic photo" id="photobtn">📷 Photo of chart<input type="file" id="photo" accept="image/*" capture="environment" multiple hidden></label>
             <button class="mic" id="trmic" data-target="transcript">🎙 Dictate</button>
           </div>
         </div>
         <textarea id="transcript" rows="6" placeholder="Paste the transcript, dictate, add a photo, or just type — any language."></textarea>
+        <p class="hint" id="asrstate"></p>
         <p class="hint" id="ocrstate"></p>
         <p class="hint" id="fillstate"></p>
-        <p class="hint">Dictation listens for one language at a time. On a phone, the keyboard microphone works in this box too and handles mixed Thai and English. Photos are read on this device and never uploaded.</p>
+        <p class="hint">Pick the language above before adding a recording: English uses a small, fast model; Thai (or mixed) uses a bigger one and takes longer. The recording is turned into text on this device — nothing is uploaded — and the speech model (75 MB for English, 250 MB for Thai) is downloaded once and kept. A 30-minute session takes a few minutes on a laptop, longer on a phone; leave the page open. Dictation listens for one language at a time. On a phone, the keyboard microphone works in this box too and handles mixed Thai and English. Photos are read on this device and never uploaded.</p>
       </div>
       <div id="nums"></div>
     </div>

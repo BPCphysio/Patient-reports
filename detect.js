@@ -103,7 +103,7 @@ window.DETECT = (function () {
   // Pain / subjective
   const ADJ = new Set(["Dull", "Sharp", "Radiating", "Throbbing", "Shooting", "Burning", "Aching"]);
   add("Dull", "dull", "ตื้อ", "ปวดตื้อ", "หนึบ"); add("Sharp", "sharp", "แปลบ", "จี๊ด", "ปวดแปลบ");
-  add("Radiating", "radiating", "radiate", "radiates", "refer", "referred", "ร้าว", "ปวดร้าว", "ร้าวลง");
+  add("Radiating", "radiating", "radiate", "radiates", "refer", "referred", "ร้าว", "ปวดร้าว", "ร้าวลง", "ล้าว", "ล้าวลง", "ปวดล้าว", "shooting down");
   add("Throbbing", "throbbing", "throb", "ตุบ", "ตุ๊บ"); add("Stiffness", "stiff", "stiffness", "ฝืด", "ขยับยาก", "ข้อแข็ง");
   add("Numbness", "numb", "numbness", "ชา"); add("Shooting", "shooting", "แล่น", "ปวดแล่น");
   add("Tingling", "tingling", "tingle", "pins and needles", "เหน็บ", "ซ่า", "ยิบ"); add("Burning", "burning", "burn", "แสบ", "แสบร้อน");
@@ -225,7 +225,7 @@ window.DETECT = (function () {
   add("Sit to stand double legs", "sit to stand", "sts", "ลุกนั่ง", "ลุกจากเก้าอี้"); add("Sit to stand single leg", "single leg sit to stand", "sit to stand single leg", "ลุกนั่งขาเดียว");
   add("Squat", "squat", "squats", "สควอท", "สควอต"); add("Single leg squat", "single leg squat", "single-leg squat", "one leg squat", "pistol squat", "สควอทขาเดียว");
   add("Deep squat", "deep squat", "full squat"); add("Overhead squat", "overhead squat", "ohs"); add("Step down test", "step down", "step-down", "ก้าวลง"); add("Step up test", "step up test", "ก้าวขึ้น");
-  add("Hop test", "hop test", "hop", "hopping", "hops", "กระโดดขาเดียว", "กระโดด"); add("Double balance", "double leg balance", "two leg balance", "ยืนสองขา");
+  add("Hop test", "hop test", "hopping test", "hop on one leg", "single leg hop", "single-leg hop", "กระโดดขาเดียว"); add("Double balance", "double leg balance", "two leg balance", "ยืนสองขา");
   add("Single leg balance", "single leg balance", "single leg stance", "one leg balance", "one leg stand", "stand on one leg", "ยืนขาเดียว", "ทรงตัวขาเดียว"); add("Gait analysis", "gait", "walking pattern", "ท่าเดิน", "การเดิน");
   add("Stair climbing", "stair climbing", "climbing stairs"); add("Heel raise", "heel raise", "heel raises", "calf raise", "calf raises", "เขย่ง", "เขย่งส้น", "เขย่งปลายเท้า"); add("Bulgarian split squat", "bulgarian split squat", "bulgarian", "rear foot elevated split squat");
   add("Double leg squats", "double leg squat"); add("Single leg squats");
@@ -294,7 +294,12 @@ window.DETECT = (function () {
   add("Delayed onset muscle soreness", "doms", "delayed onset"); add("Sedentary lifestyle-related pain", "sedentary", "นั่งนานเกิน"); add("Fibromyalgia", "fibromyalgia", "ไฟโบรมัยอัลเจีย");
   add("Generalised hypermobility", "generalised hypermobility", "generalized hypermobility", "hypermobility syndrome", "ข้อหลวมทั่วตัว"); add("Work-related musculoskeletal disorder", "work related", "work-related", "wmsd", "บาดเจ็บจากการทำงาน");
   add("Office syndrome", "office syndrome", "ออฟฟิศซินโดรม", "ออฟฟิตซินโดรม"); add("Muscle tightness from hormonal changes during pregnancy", "pregnancy tightness", "ตึงจากตั้งครรภ์");
-  add("Scoliosis", "scoliosis");
+  add("Scoliosis", "scoliosis", "scoriosis", "secoliosis", "scoliose", "หลังคด", "กระดูกสันหลังคด");
+  add("Sacroiliac joint dysfunction", "si joint dysfunction", "s i joint", "sacroiliac dysfunction", "si joint problem", "เอสไอจอย", "เอสไอจอยดิสฟังก์ชัน", "ข้อต่อเอสไอ", "sij problem");
+  add("Muscle imbalance", "มัสเซลอินบาลานซ์", "มัสเซิลอิมบาลานซ์", "มัสเซิลอินบาลานซ์", "muscle in balance", "muscle imbalanced", "kinetic imbalance");
+  add("Office syndrome", "ออฟฟิศซินโดม", "ออฟฟิสซินโดม", "office syndrom");
+  add("Degenerative disc disease", "degenerative of your low back", "degenerative low back", "degeneration of your low back", "degenerative change", "degenerative changes", "wear and tear of the spine", "หมอนรองกระดูกเสื่อม", "กระดูกสันหลังเสื่อม");
+  add("Cervical spondylosis", "narrowing at c6 c7", "narrowing around c6", "c6 and c7 is narrowing", "cervical narrowing");
   const GENERIC_DX = new Set(["Muscle tightness", "Muscle spasm", "General muscle tightness", "Scoliosis", "Swelling", "Poor posture", "Muscle tension", "Muscle strain", "Overuse"]);
   const DXCTX = /\b(diagnos\w*|dx|impression|analysis|assessment|condition|suspect\w*|likely|consistent with)\b|วินิจฉัย|น่าจะเป็น|สงสัย|เป็นโรค/;
   const ALL_DX = Object.values(V.DIAGNOSES).flat();
@@ -316,15 +321,26 @@ window.DETECT = (function () {
   add("Ultrasound (US)", "ultrasound", "u/s", "อัลตร้า", "อัลตรา"); add("US combined with stim", "us combine", "us combined", "combine", "combined with stim", "ultrasound combined with stim", "ultrasound combined", "ultrasound combine", "ultrasound with stim", "us with stim", "คอมบาย", "อัลตร้าซาวด์ร่วมกับกระตุ้นไฟฟ้า", "อัลตราซาวด์ร่วมกับกระตุ้นไฟฟ้า", "ร่วมกับกระตุ้นไฟฟ้า", "อัลตร้าซาวด์คอมบาย");
   add("US + IFC", "us + ifc", "us and ifc", "us with ifc", "ultrasound and ifc"); add("IFC (interferential current)", "ifc", "interferential", "ไอเอฟซี"); add("TENS", "tens", "เทนส์");
   add("Electrical stimulation", "electrical stimulation", "electrical stim", "e-stim", "estim", "nmes", "ems", "กระตุ้นไฟฟ้า", "ไฟฟ้ากระตุ้น"); add("High power LASER (HPLT)", "laser", "hplt", "high power laser", "เลเซอร์");
+  add("Ultrasound (US)", "untrasound", "ultra sound", "อัลตร้าซาวด์", "อัลตราซาวด์"); add("Massage", "samassar", "manual release", "release the muscle by hand", "คลายกล้ามเนื้อด้วยมือ");
+  add("Spinal mobilization", "mobilize your spine", "mobilise your spine", "mobilize your spy", "open the canal", "ขยับข้อต่อกระดูกสันหลัง");
   add("Shockwave therapy", "shockwave", "shock wave", "eswt", "ช็อคเวฟ", "ช็อกเวฟ", "คลื่นกระแทก"); add("Peripheral magnetic stimulation (PMS)", "pms", "magnetic stimulation", "peripheral magnetic", "แม่เหล็ก", "คลื่นแม่เหล็ก");
   add("Neck traction", "neck traction", "cervical traction", "ดึงคอ"); add("Pelvic traction", "pelvic traction", "lumbar traction", "ดึงหลัง", "ดึงเอว");
   add("Hot pack", "hot pack", "hotpack", "hot packs", "heat pack", "ประคบร้อน", "แผ่นร้อน", "ฮอตแพค", "ฮอทแพค"); add("Cold pack", "cold pack", "ice pack", "cold packs", "cryotherapy", "ประคบเย็น", "แผ่นเย็น");
   add("Massage", "massage", "massaged", "deep friction", "soft tissue release", "soft tissue", "release the knots", "release the knots by hand", "release the muscles by hand", "release by hand", "work on the knots", "work into the muscle", "trigger point release", "myofascial release", "press on the knot", "นวด", "กดจุด", "คลายกล้ามเนื้อ"); add("Stretching", "stretching", "stretch", "stretched", "ยืด", "ยืดกล้ามเนื้อ"); add("Passive stretch", "passive stretch", "passive stretching", "ยืดแบบพาสซีฟ");
   add("Joint mobilization", "joint mobilization", "joint mobilisation", "mobilization", "mobilisation", "mobs", "mobilized", "mobilised", "move the joint for you", "gently move the ankle joint", "gently move the joint", "small movements to keep it from stiffening", "glide the joint", "loosen the joint", "ขยับข้อ", "ดัดข้อ", "โมบิไลซ์", "โมบิไลเซชั่น"); add("Spinal mobilization", "spinal mobilization", "spinal mobilisation", "spinal mobs", "lumbar mobilization", "lumbar mobilisation", "cervical mobilization", "cervical mobilisation", "ขยับกระดูกสันหลัง");
-  add("Cupping", "cupping", "ครอบแก้ว", "คัพปิ้ง"); add("Taping", "taping", "tape", "taped", "kinesio", "kinesiotape", "k-tape", "เทป", "เทปปิ้ง", "ติดเทป");
+  add("Cupping", "cupping", "ครอบแก้ว", "คัพปิ้ง"); add("Taping", "taping", "taped", "tape the", "tape your", "tape it", "put tape on", "kinesio", "kinesiotape", "k-tape", "เทปปิ้ง", "ติดเทป", "แปะเทป");
   add("Home advice", "home advice", "advice", "advise", "advised", "advice given", "แนะนำ", "ให้คำแนะนำ", "คำแนะนำ");
+  add("Refer for MRI", "recommend you to do mri", "recommend mri", "recommend an mri", "refer for mri", "refer you for an mri", "send you for an mri", "mri of your low back", "do mri", "ส่งตรวจ mri", "ทำ mri", "แนะนำให้ทำ mri");
+  add("Refer for X-ray", "recommend x-ray", "recommend an x-ray", "refer for x-ray", "need an x-ray", "send you for an x-ray", "แนะนำให้เอ็กซเรย์", "ส่งเอ็กซเรย์", "ต้องเอ็กซเรย์"); add("Refer to doctor", "refer you to the doctor", "see the doctor", "refer to a doctor", "ส่งพบแพทย์", "แนะนำให้พบแพทย์");
   add("Forward head posture", "head sits forward", "head forward of your shoulders", "head is forward", "head pokes forward", "head sits a little forward", "head sits in front");
-  add("Round shoulder", "shoulders are rounded forward", "shoulders round forward", "shoulders roll forward", "rounded shoulders");
+  add("Round shoulder", "shoulders are rounded forward", "shoulders round forward", "shoulders roll forward", "rounded shoulders", "brow shoulder", "grab of shoulder", "round of shoulder", "ไหล่มุ้ม", "ไหล่งุ้มไปข้างหน้า");
+  add("Forward head", "หน้ายื่น", "หัวยื่นไปข้างหน้า", "forward head posture", "head forward");
+  add("Scoliosis", "scoriosis", "secoliosis", "scoliosi", "coliosi", "scoliose", "กระดูกสันหลังคดนิดหน่อย", "หลังคดนิดหน่อย", "สันหลังคดเล็กน้อย");
+  add("Knee valgus", "collapsed knee", "knee collapse", "knee is collapsed", "knees collapse in", "เข่าเข้าใน", "เข่าหมุนเข้า", "เข่าเข้าไปข้างใน", "เข่าบิดเข้าใน");
+  add("Genu recurvatum", "hyperextension of your knee", "hyper extension of your knee", "knee hyperextension", "hyper a tension of your knee", "knees lock back", "เข่าแอ่นไปข้างหลัง");
+  add("Hip elevation Rt.", "สะโพกขวาสูงกว่า", "สะโพกขวามันดูสูงกว่า", "right hip is higher", "right hip higher", "right hip sits higher", "pelvis higher on the right"); add("Hip elevation Lt.", "สะโพกซ้ายสูงกว่า", "สะโพกซ้ายมันดูสูงกว่า", "left hip is higher", "left hip higher", "left hip sits higher", "pelvis higher on the left");
+  add("Shoulder level Rt.>Lt.", "ไหล่ขวาสูงกว่า", "ไหล่ขวาสูงกว่าซ้าย", "right shoulder higher"); add("Shoulder level Lt.>Rt.", "ไหล่ซ้ายสูงกว่า", "ไหล่ซ้ายสูงกว่าขวา", "ไหล่ทางด้านซ้ายของเราจะสูง", "left shoulder higher", "left shoulder is higher than the right");
+  add("Scapular winging", "shoulder blade sticks out", "shoulder blade wings", "สะบักปีก", "สะบักเหิม"); add("Flat feet", "feet are flat", "flat foot a bit", "เท้าแบนนิดหน่อย", "เท้าแบนกว่า");
   add("Thoracic hyperkyphosis", "upper back is rounded", "upper back is a little rounded", "rounded upper back", "hunched upper back", "hunched over");
   add("Shoulder level Rt.>Lt.", "right shoulder is higher", "right shoulder is slightly higher", "right shoulder sits higher", "left shoulder is lower", "left shoulder is a little lower", "left shoulder sits lower");
   add("Shoulder level Lt.>Rt.", "left shoulder is higher", "left shoulder is slightly higher", "left shoulder sits higher", "right shoulder is lower", "right shoulder is a little lower", "right shoulder sits lower");
@@ -389,7 +405,7 @@ window.DETECT = (function () {
   add("Single leg balance on foam", "single leg balance on foam", "balance on foam", "foam balance", "ยืนขาเดียวบนโฟม"); add("Wobble board", "wobble board", "balance board", "บอร์ดทรงตัว"); add("Hop and hold", "hop and hold", "hop hold"); add("Lateral hop", "lateral hop", "lateral hops", "side hop", "side hops", "กระโดดข้าง");
   add("Single leg balance eyes open", "single leg balance eyes open", "eyes open balance"); add("Single leg balance eyes closed", "single leg balance eyes closed", "eyes closed balance", "หลับตายืนขาเดียว"); add("Balance on bosu", "bosu", "bosu balance", "on the bosu", "โบซู");
   add("Land and hold single leg", "land and hold", "land and hold single leg", "single leg landing", "landing"); add("Land and hold with ball throw", "ball throw", "land and hold with ball throw", "landing with ball throw"); add("Vertical jump", "vertical jump", "vertical jumps", "กระโดดขึ้น");
-  add("Vertical jump with split leg on bosu", "split leg jump on bosu", "split jump on bosu"); add("Box jump", "box jump", "box jumps", "กระโดดกล่อง"); add("Drop jump", "drop jump", "drop jumps", "depth jump"); add("Broad jump", "broad jump", "broad jumps", "long jump", "กระโดดไกล");
+  add("Vertical jump with split leg on bosu", "split leg jump on bosu", "split jump on bosu"); add("Box jump", "box jump", "box jumps", "กระโดดกล่อง"); add("Drop jump", "drop jump", "drop jumps", "depth jump"); add("Broad jump", "broad jump", "broad jumps", "กระโดดไกล");
   add("Lateral bound", "lateral bound", "lateral bounds", "skater", "skaters", "skater jumps"); add("Agility ladder", "agility ladder", "ladder drill", "ladder drills", "บันไดลิง"); add("Change of direction drill", "change of direction", "cod drill", "cutting drill", "cutting");
   add("Sprint progression", "sprint", "sprints", "sprinting", "วิ่งเร็ว"); add("Plyometric progression", "plyometric", "plyometrics", "plyo", "พลัยโอเมตริก"); add("Sport-specific drill", "sport specific", "sport-specific", "sports specific");
   add("Pilates reformer — footwork", "footwork", "reformer footwork"); add("Pilates reformer — leg circles", "leg circles"); add("Pilates mat — hundred", "the hundred", "pilates hundred"); add("Pilates mat — roll up", "roll up", "roll ups", "roll-up");
@@ -467,7 +483,8 @@ window.DETECT = (function () {
   add("Single leg stand", "single leg stand", "single leg standing", "sls"); add("Pogos", "pogo", "pogos", "pogo jumps", "pogo hops"); add("Balance test", "balance test", "balance testing", "ทดสอบการทรงตัว");
   add("Arm raise", "arm raise test", "arm raising test"); add("Multisegmental rotation", "multisegmental rotation", "multi-segmental rotation", "msr"); add("Multisegmental flexion", "multisegmental flexion", "multi-segmental flexion", "msf"); add("Multisegmental extension", "multisegmental extension", "multi-segmental extension", "mse");
 
-  add("PKB (prone knee bend)", "pkb", "prone knee bend", "femoral nerve stretch"); add("SIJ distraction", "sij distraction", "si distraction", "sacroiliac distraction"); add("SIJ compression", "sij compression", "si compression", "sacroiliac compression");
+  add("PKB (prone knee bend)", "pkb", "prone knee bend", "femoral nerve stretch"); add("Adam's forward bend test", "adam haz", "adam has", "adams test", "adam's test", "adam test", "adam's forward bend", "adam forward bending", "อดัมเทส");
+  add("SLR", "เอสเอลอาร์", "เอส แอล อาร์", "straight leg raising", "s l r"); add("SIJ distraction", "sij distraction", "si distraction", "sacroiliac distraction"); add("SIJ compression", "sij compression", "si compression", "sacroiliac compression");
   add("Kemp test", "kemp", "kemp's", "kemps", "quadrant test"); add("Ely test", "ely test", "ely's", "elys"); add("Hawkins test", "hawkins test", "hawkins");
   add("Gym", "gym", "gym exercise", "gym program", "gym session", "ยิม", "เข้ายิม", "ฟิตเนส", "เล่นเวท"); add("Home program", "home program", "home programme", "hep", "home exercise", "home exercises", "โปรแกรมที่บ้าน", "ท่าบริหารที่บ้าน", "การบ้าน");
   add("Stretching exercise", "stretching exercise", "stretching exercises", "ยืดเหยียด", "ท่ายืด");
@@ -505,11 +522,15 @@ window.DETECT = (function () {
   const HISTORY = /\b(previous\w*|history|years? ago|months? ago|weeks? ago|before|used to|old|childhood)\b|เคย|มาก่อน|ปีก่อน|ปีที่แล้ว|เดือนก่อน/;
 
   function run(text, region) {
+    text = String(text || "")
+      .replace(/^[ \t]*\[\d{1,2}:\d{2}(?::\d{2})?\][ \t]*/gm, "")        // "[03:22] " at the start of a line
+      .replace(/^Transcript:[^\n]*$/m, "")                                 // the transcriber's header line
+      .replace(/[๐-๙]/g, (d) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(d)));           // Thai numerals
     const low = numberWords(norm(text));
     const labelled = hasSpeakers(low);
     const sentEnd = (i) => { const cands = [". ", "? ", "! ", "\n"].map((p) => low.indexOf(p, i)).filter((x) => x >= 0); return cands.length ? Math.min(...cands) : low.length; };
     const sentStart = (i) => { const cands = [". ", "? ", "! ", "\n"].map((p) => low.lastIndexOf(p, i)).filter((x) => x >= 0); return cands.length ? Math.max(...cands) + 1 : 0; };
-    const sentenceOf = (i) => { const cands = [". ", "? ", "! ", "\n"]; const st = Math.max(...cands.map((p) => low.lastIndexOf(p, i)).filter((x) => x >= 0), -1) + 1; const en = Math.min(...cands.map((p) => low.indexOf(p, i)).filter((x) => x >= 0), low.length); return low.slice(st, en); };
+    const sentenceOf = (i) => { const cands = [". ", "? ", "! ", "\n"]; const st = Math.max(...cands.map((p) => low.lastIndexOf(p, i)).filter((x) => x >= 0), -1) + 1; const en = Math.min(...cands.map((p) => low.indexOf(p, i)).filter((x) => x >= 0), low.length); return low.slice(st, Math.min(low.length, en + 1)); };
     const nextLineStarts = (i, n) => { const o = []; let e = low.indexOf("\n", i); while (e >= 0 && o.length < (n || 3)) { const e2 = low.indexOf("\n", e + 1); const line = low.slice(e + 1, e2 < 0 ? low.length : e2); if (line.trim()) o.push([e + 1, line]); e = e2 < 0 ? -1 : e2; } return o; };
     const OTHER = /^\s*(?:[^:\n]{0,24}:)?\s*(?:and |now |okay,? |good,? |ok,? )*(?:the |on the |your |do the )?(left|right|other side|other leg|other one|other arm|other knee|other foot|other shoulder)\b[^\n]{0,12}$/;
     const out = { lines: [], region: null, heard: new Set(), tt: "", vas: "", side: "" };
@@ -579,7 +600,8 @@ window.DETECT = (function () {
         if (body.some((b) => b.i > m.index && b.i - m.index <= 14) || /^(?:ด้าน)?(?:ขวา|ซ้าย)/.test(low.slice(m.index)) && body.some((b) => b.i < m.index && m.index - (b.i + b.len) <= 6)) w += 1;
         if (isR) r += w; else l += w;
       }
-      out.side = r >= 3 && r >= 1.5 * l ? "Rt." : l >= 3 && l >= 1.5 * r ? "Lt." : (bothSaid && r >= 2 && l >= 2) ? "Both" : "";
+      // a recording has no speaker labels, so "my right knee" said twice with no "left" anywhere is enough
+      out.side = (r >= 3 && r >= 1.5 * l) || (r >= 2 && l === 0) ? "Rt." : (l >= 3 && l >= 1.5 * r) || (l >= 2 && r === 0) ? "Lt." : (bothSaid && r >= 2 && l >= 2) ? "Both" : "";
     }
     const SPINE = new Set(["Neck / cervical", "Thoracic spine", "Trunk / lumbar"]);
     const sideOfHit = (h, beforeLen, afterLen) => side(low.substr(h.i, h.len)) || sideNear(low, h.i, h.len, beforeLen === undefined ? 8 : beforeLen, false, afterLen);
@@ -598,7 +620,7 @@ window.DETECT = (function () {
     const R = (region && region !== V.REGIONS[0]) ? region : (out.region || V.REGIONS[0]);
 
     // Subjective: set phrases first, then pain description, plain pain at a part, aggravating, easing
-    const phraseHitsAll = pick(scan(entries(V.SUBJECTIVE_PHRASES || []), low));
+    const phraseHitsAll = pick(scan(entries(V.SUBJECTIVE_PHRASES || []), low)).filter((h) => !/better|relief|improv/i.test(h.term) || /\b(treatment|session|last (?:time|visit)|since|after)\b|หลังจาก|หลังรักษา|ครั้งก่อน|ครั้งที่แล้ว|จากครั้ง/.test(sentenceOf(h.i)));
     const phraseHits = phraseHitsAll.filter((h) => !hasSpeakers(low) || isPatientLine(speakerLine(low, h.i)) || speakerLine(low, h.i).length > 220);
     phraseHits.forEach((h) => { out.heard.add(h.term); push("subjective", "", h.term); });
     const modEarly = pick(scan(entries(MODALITIES), low));
@@ -788,6 +810,7 @@ window.DETECT = (function () {
       const examCue = /\b(don'?t let me|do not let me|tell me if|tell me where|does it hurt|any pain|painful\?|for me\b[^\n]{0,30}\?|compare|the other side|now the other|other leg)\b|บอกด้วย|เจ็บไหม|อย่าให้/.test(speakerLine(low, h.i));
       if (inE && examCue && !isEx && !inF) return;
       if (FUTURE.test(sentenceOf(h.i)) && !DOSE1.test(sentenceOf(h.i))) return;
+      if (inE && /\b(i do|i did|i was doing|i've been doing|i tried|he gave me|she gave me|gave me some|used to do|i played|i play)\b|เคยทำ|เคยเล่น/.test(sentenceOf(h.i)) && !DOSE1.test(sentenceOf(h.i))) return;
       if (inE && (!inF || isEx) && !(inF && isTest && !isEx) && !(inF && /\b(show me|can you do|do a|for me)\b/.test(low.slice(Math.max(0, h.i - 30), h.i)))) {
         exHits.push(h);
         const nextX = fx.filter((o) => o.i > h.i).map((o) => o.i).sort((a, b) => a - b)[0];
@@ -965,7 +988,8 @@ window.DETECT = (function () {
       if (area) { o = o.replace("Area: ___", "Area: " + area).replace(/\bon ___/, "on " + area).replace(/^(Massage|Stretching|Passive stretch|Stretching exercise): ___/, "$1: " + area); }
       return o;
     };
-    const modHits = pick(scan(entries(MODALITIES), low)).filter((h) => !overlaps(h, exHits) && !patientSaid(h.i) && !isQuestion(sentenceOf(h.i)));
+    const HIST_SENT = /\b(tried|i did|i had|they did|last time|before|used to|went for|went to|previous|ago|at the hospital|the doctor (?:did|gave)|she did|he did|they put)\b|เคย|ก่อนหน้านี้|ที่ผ่านมา|หมอให้/;
+    const modHits = pick(scan(entries(MODALITIES), low)).filter((h) => !overlaps(h, exHits) && !patientSaid(h.i) && !isQuestion(sentenceOf(h.i)) && !HIST_SENT.test(sentenceOf(h.i)));
     const hasCombined = modHits.some((h) => h.term === "US combined with stim" || h.term === "US + IFC");
     const byTerm = {};
     modHits.forEach((h) => {
@@ -982,7 +1006,7 @@ window.DETECT = (function () {
       if (th.length) { const t = R === "Neck / cervical" ? "Neck traction" : "Pelvic traction"; out.heard.add(t); push("treatment", "", fillParams(V.TREATMENT_MODALITIES[t], th.map((h) => ({ term: t, i: h.i, len: h.len })), modHits)); }
     }
     pick(scan(entries(V.POSITIONS), low)).forEach((h) => { out.heard.add(h.term); push("treatment", "", h.term); });
-    pick(scan(entries(V.POST_TREATMENT || []), low)).forEach((h) => { out.heard.add(h.term); push("treatment", "", h.term); });
+    pick(scan(entries(V.POST_TREATMENT || []), low)).filter((h) => /\b(after|post|treatment|session|now)\b|หลัง|ตอนนี้|หลังจาก/.test(sentenceOf(h.i)) && !HIST_SENT.test(sentenceOf(h.i))).forEach((h) => { out.heard.add(h.term); push("treatment", "", h.term); });
     let sm; SESSION.lastIndex = 0;
     while ((sm = SESSION.exec(low))) {
       const c = ctx(low, sm.index, sm[0].length, 30); if (!SESSIONCTX.test(c)) continue;

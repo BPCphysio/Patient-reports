@@ -79,6 +79,15 @@ window.LAY = (function () {
     [["look down", "chin to your chest", "tuck your chin down", "bend your neck forward", "nod down"], "Neck flexion"],
     [["turn your head", "look over your shoulder", "turn to look behind", "turn your head to the"], "Neck rotation"],
     [["ear to your shoulder", "tilt your head", "tip your head to the side", "ear towards your shoulder"], "Neck lateral flexion"],
+    [["ก้มตัวลง", "ก้มตัว", "ก้มลงไปข้างหน้า", "ก้มหลัง"], "Trunk flexion"],
+    [["แอ่นหลัง", "แอ่นตัว", "เอนตัวไปข้างหลัง"], "Trunk extension"],
+    [["เอียงตัวมาทางด้านขวา", "เอียงตัวมาทางด้านซ้าย", "เอียงตัวไปทางขวา", "เอียงตัวไปทางซ้าย", "เอียงตัว", "เอียงลำตัว"], "Trunk lateral flexion"],
+    [["บิดตัว", "หมุนตัว", "หันตัว"], "Trunk rotation"],
+    [["ก้มหน้าลง", "ก้มหน้า", "ก้มคอ"], "Neck flexion"],
+    [["เงยหน้าขึ้น", "เงยหน้า", "แหงนหน้า"], "Neck extension"],
+    [["เอียงคอ", "หูซ้ายลงมาที่ไหล่", "หูขวาลงมาที่ไหล่", "เอียงศีรษะ"], "Neck lateral flexion"],
+    [["หมุนหน้า", "หันหน้า", "หันคอ", "เอาคางมาชิดไหล่"], "Neck rotation"],
+    [["กางขา", "กางขาออก"], "Hip abduction"],
     [["bend forward", "touch your toes", "reach for your toes", "bend down to the floor", "fold forward", "roll down"], "Trunk flexion"],
     [["lean back", "lean backwards", "lean back with your hands on your hips", "arch your back", "bend backwards", "look up and lean back", "extend your back"], "Trunk extension"],
     [["slide your hand down your leg", "slide your hand down the side of your leg", "hand down the side of your leg", "lean to the side", "side bend", "tip to the side", "reach down the side of your leg", "slide your hand down"], "Trunk lateral flexion"],
@@ -115,7 +124,7 @@ window.LAY = (function () {
     [["hug your knee to your chest", "hug your left knee", "hug your right knee", "hug one knee", "knee to your chest and let", "leg hang off the bed", "let the other leg hang", "let the other leg relax down", "does the thigh stay up", "thigh stays up", "thigh stay up"], "Thomas test", [R_KNEE, R_HIP, R_LUMB]],
     [["let your leg drop down behind you lying on your side", "top leg back and let it drop", "does your leg drop", "leg stays up in the air on your side"], "Ober test", [R_KNEE, R_HIP]],
     [["press on the outside of your knee while i straighten", "press on the outside of the knee and bend", "pressure on the outside of your knee as i move it"], "Noble test", [R_KNEE, R_HIP]],
-    [["lift your leg straight up", "lift your leg up straight", "keep your leg straight and i'll lift it", "i'll lift your straight leg", "raise your leg keeping the knee straight", "pain down the leg when i lift", "i'm going to lift your leg straight up", "lift your leg straight up, keep it relaxed"], "SLR", [R_LUMB, R_HIP]],
+    [["lift your leg straight up", "lift your leg up straight", "keep your leg straight and i'll lift it", "i'll lift your straight leg", "raise your leg keeping the knee straight", "pain down the leg when i lift", "i'm going to lift your leg straight up", "lift your leg straight up, keep it relaxed", "ยกขาเหยียดขึ้น", "ยกขาเหยียด", "ยกขาตรงขึ้น", "เหยียดขายกขึ้น"], "SLR", [R_LUMB, R_HIP]],
     [["sit on the edge and slouch", "slouch and straighten your knee", "slump forward", "chin down and straighten your leg", "slouch down, chin to chest"], "Slump test", [R_LUMB, R_THOR]],
     [["bend your knee while you lie on your front", "heel to your bottom lying on your front", "on your front and i'll bend your knee", "bend your knee while you're on your front", "while you're on your front, i'll bring your heel", "on your front, i'll bring your heel towards your bottom", "bring your heel towards your bottom while you're on your front"], "PKB (prone knee bend)", [R_LUMB, R_HIP]],
     [["press down on your head", "push down on the top of your head", "press on top of your head", "press down on the top of your head", "push down on your head", "press straight down on your head"], "Compression test", [R_NECK]],
@@ -148,7 +157,7 @@ window.LAY = (function () {
   ];
 
   // --- what the physio says while testing strength -> muscle group ---------
-  const MMT_CONTEXT = /don't let me|dont let me|do not let me|resist|hold it|hold that|hold this|push against|pull against|against my hand|against me|i'll push|i will push|i'll pull|i will pull|keep it there|stay strong|ต้าน|อย่าให้|เกร็งไว้|ค้างไว้/i;
+  const MMT_CONTEXT = /don't let me|dont let me|do not let me|not let me|resist|hold it|hold that|hold this|push against|pull against|against my hand|against me|i'll push|i will push|i'll pull|i will pull|keep it there|stay strong|ต้าน|อย่าให้|เกร็งไว้|ค้างไว้/i;
   const MMT = [
     [["straighten your knee", "keep your knee straight", "leg straight", "push down on your ankle", "kick your leg up", "knee straight and hold"], "quadriceps"],
     [["keep your knee bent", "heel towards you", "heel to your bottom and hold", "bend your knee against", "pull your heel"], "hamstring"],
@@ -232,7 +241,7 @@ window.LAY = (function () {
   ];
 
   // --- the patient's reply -> test result ----------------------------------
-  const POSITIVE = /\b(yes|yeah|yep|ouch|ow|ah|that hurts|that's it|that's the one|that's the spot|there|painful|pain|sharp|catch|click|clicks|clicking|pop|grinding|tender|sore|uncomfortable|yes a bit|a bit|a little|slightly|hmm yes)\b|เจ็บ|ปวด|ใช่|ตรงนั้น|โอ๊ย|อุ๊ย|ดัง|กึก/i;
+  const POSITIVE = /ร้าว|ล้าว|จี๊ด|\b(yes|yeah|yep|ouch|ow|ah|that hurts|that's it|that's the one|that's the spot|there|painful|pain|sharp|catch|click|clicks|clicking|pop|grinding|tender|sore|uncomfortable|yes a bit|a bit|a little|slightly|hmm yes)\b|เจ็บ|ปวด|ใช่|ตรงนั้น|โอ๊ย|อุ๊ย|ดัง|กึก/i;
   const NEGATIVE = /\b(no|nope|nothing|fine|okay|ok|that's fine|no pain|not really|nothing there|doesn't hurt|feels normal|same as the other side|no click|no difference)\b|ไม่|ไม่เจ็บ|ไม่ปวด|ปกติ|เฉยๆ|โอเค/i;
 
   return { BODY, MOVE, TESTS, MMT, MMT_CONTEXT, TEST_CUES, FUNC, DX, POSITIVE, NEGATIVE };
