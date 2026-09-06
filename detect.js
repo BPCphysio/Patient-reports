@@ -160,7 +160,7 @@ window.DETECT = (function () {
   add("Lumbar hyperlordosis", "hyperlordosis", "lordosis", "sway back", "หลังแอ่น"); add("Anterior pelvic tilt", "anterior pelvic tilt", "apt", "เชิงกรานเอียงหน้า");
   add("Posterior pelvic tilt", "posterior pelvic tilt", "ppt", "เชิงกรานเอียงหลัง"); add("Pelvic asymmetry", "pelvic asymmetry", "pelvis asymmetric", "เชิงกรานไม่เท่ากัน");
   add("Hip elevation Rt.", "right hip higher", "rt hip elevated", "สะโพกขวาสูง"); add("Hip elevation Lt.", "left hip higher", "lt hip elevated", "สะโพกซ้ายสูง");
-  add("Scoliosis", "scoliosis", "กระดูกสันหลังคด", "หลังคด", "สันหลังคด"); add("No scoliosis", "no scoliosis", "ไม่มีหลังคด");
+  add("Scoliosis", "scoliosis", "กระดูกสันหลังคด", "กระดูกสันคด", "สันหลังโค้ง", "หลังโค้งไปทาง", "หลังคด", "สันหลังคด"); add("No scoliosis", "no scoliosis", "ไม่มีหลังคด");
   add("Genu valgum (knock knee)", "knock knees", "เข่าฉิ่ง", "เข่าชนกัน", "เข่าชิด"); add("Genu varum (bow leg)", "bow legs", "bowleg", "bowlegs", "varus knee", "ขาโก่ง");
   add("Genu recurvatum", "recurvatum", "hyperextended knee", "เข่าแอ่น"); add("Patella alta", "patella alta"); add("Patellar lateral shift", "lateral patellar shift", "patella shifted laterally", "patella lateral");
   add("Flat feet", "flat foot", "flat feet", "flatfoot", "pes planus", "เท้าแบน"); add("No flat feet", "no flat feet", "arches normal", "ไม่มีเท้าแบน"); add("Pes cavus", "pes cavus", "high arch", "high arches", "อุ้งเท้าสูง");
@@ -739,7 +739,18 @@ window.DETECT = (function () {
     });
 
     // Range of motion for the region in play
-    const moves = V.ROM_BY_REGION[R] || V.ROM_GENERAL;
+    let moves = V.ROM_BY_REGION[R] || V.ROM_GENERAL;
+    {
+      const extra = [];
+      Object.entries(V.ROM_BY_REGION).forEach(([reg, list]) => {
+        if (reg === R) return;
+        const names = new Set(list.map((m) => m.replace(/ (Rt\.|Lt\.)$/, "")));
+        let hits = 0;
+        LAY.MOVE.forEach(([phrases, movement]) => { if (!names.has(movement)) return; if (sidedAll(phrases).some((p) => low.includes(p))) hits++; });
+        if (hits >= 3) extra.push(...list);
+      });
+      if (extra.length) moves = [...new Set([...moves, ...extra])];
+    }
     const bases = [...new Set(moves.map((m) => m.replace(/ (Rt\.|Lt\.)$/, "")))];
     const moveEntries = bases.map((b) => { const tok = norm(b).replace(MOVE_PREFIX, ""); return [b, [...new Set([norm(b), ...(MOVE[tok] || [tok]), ...(LAY_MOVE[b] || [])])]]; });
     const moveHits = pick(scan(moveEntries, low)); const movesSeen = new Set();
@@ -771,6 +782,10 @@ window.DETECT = (function () {
       if (layMove && labelled && !patientSaid(h.i)) {
         const sdL = sd; const nmL = nm;
         const reply = replyAfter(h.i);
+        // "look up, look down, turn right, left, tilt to each side" — one reply for several movements:
+        // "all fine" is full range for each; anything else belongs only to the last movement named
+        const laterOnLine = moveHits.some((o) => o.i > h.i && o.term !== h.term && sameLine(low, o.i, h.i) && LAY_MOVE_SET.has(low.substr(o.i, o.len)));
+        if (laterOnLine) { if (/\ball (?:fine|good|okay|ok|normal)\b|ปกติทั้งหมด|ได้หมด/.test(reply)) { push("objective", heading, `${nmL}: full ROM without pain`); } return; }
         const follow = nextLines(h.i, 3).filter((l) => !isPatientLine(l))[0] || "";
         const followHead = follow.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");   // before the next instruction
         const dm = /(?<!arc[^.]{0,30})\b(\d{2,3})\s*(?:degrees?|°|องศา)/.exec(followHead);
