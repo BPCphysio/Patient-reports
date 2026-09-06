@@ -125,9 +125,20 @@
     if (res.region && !S.regionManual && res.region !== S.region) { S.region = res.region; $("region").value = res.region; renderBuilder(); prefillTests(); res = DETECT.run(text, S.region); }
     if (res.tt && !$("tt").value.trim()) $("tt").value = res.tt;
     // adopt the first diagnosis heard as the condition before placing lines, so it is not added twice
-    const heardDx0 = res.lines.find((l) => l.sec === "analysis");
+    // the condition is the first specific diagnosis heard; a generic one (muscle imbalance, poor posture)
+    // only when nothing more specific was said
+    const GENERIC = /^(?:rt\.|lt\.|both)?\s*(muscle imbalance|poor posture|postural dysfunction|muscle tightness|general muscle tightness|muscle tension|muscle spasm|muscle strain|overuse|swelling|scoliosis|itb tightness)$/i;
+    const dxLines = res.lines.filter((l) => l.sec === "analysis");
+    const heardDx0 = dxLines.find((l) => !GENERIC.test(l.line)) || dxLines[0];
     if (heardDx0 && (!S.condition || S.conditionAuto)) { const nm = heardDx0.line.replace(/^(Rt\.|Lt\.|Both) /, ""); if (nm !== S.condition) setCondition(nm, true); }
-    else if (!heardDx0 && S.condition && S.conditionAuto) { S.condition = ""; S.conditionAuto = false; renderCondTag(); }
+    else if (!heardDx0 && S.condition && S.conditionAuto && !S.conditionGuess) { S.condition = ""; S.conditionAuto = false; renderCondTag(); }
+    let guessed = null;
+    if (!heardDx0 && (!S.condition || S.conditionGuess)) {
+      const g = guessCondition(res);
+      if (g && g.name !== S.condition) { setCondition(g.name, true); S.conditionGuess = true; guessed = g; }
+      else if (!g && S.conditionGuess) { S.condition = ""; S.conditionAuto = false; S.conditionGuess = false; renderCondTag(); }
+      else if (g) guessed = g;
+    } else if (heardDx0) S.conditionGuess = false;
     const wanted = {};
     res.lines.forEach((l) => {
       const t = target(l.sec, l.heading); if (!t || !t[0]) return;
@@ -135,7 +146,7 @@
       // the chosen condition is already in the box; do not add it again with a side
       if (l.sec === "analysis" && S.condition && line.replace(/^(Rt\.|Lt\.|Both) /, "").toLowerCase() === S.condition.toLowerCase()) return;
       if (S.format === "New patient's record" && t[0] === "Pain scale") line = res.vas || line;
-      if (l.sec === "treatment" && !t[1]) line = fillTreatmentBlanks(line);
+      if (l.sec === "treatment" && !t[1]) line = fillTreatmentBlanks(line, res);
       (wanted[t[0]] = wanted[t[0]] || []).push({ heading: t[1] || "", line });
     });
     const key = (x) => x.heading + "" + x.line;
@@ -152,7 +163,7 @@
     });
     renderOutput(); scheduleSuggest();
     const st = $("fillstate");
-    if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.` : "Nothing recognised yet — keep going, or use the options in section 2.";
+    if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.${guessed ? ` No diagnosis was said, so the condition is the clinic's closest match to these findings: ${guessed.name} (${guessed.matched} findings in common with ${guessed.n} charts) — remove it if that is not what you found.` : ""}` : "Nothing recognised yet — keep going, or use the options in section 2.";
     return count;
   }
   let fillT; const scheduleFill = () => { clearTimeout(fillT); fillT = setTimeout(autoFill, 350); };
@@ -289,6 +300,29 @@
     for (const [re, region] of CONDITION_REGION) if (re.test(name)) return region;
     return DETECT.run(name, S.region).region || "General / other";
   }
+  // Which of the clinic's conditions do these findings look like? Every condition in
+  // suggest.js carries the lines physios wrote for it; the one sharing the most
+  // lines with what was just read from the notes (same region) is the guess.
+  const COND_REGION = {};
+  const condRegion = (k) => (COND_REGION[k] = COND_REGION[k] || regionForCondition(dxDisplay(k)));
+  const normLine = (t) => String(t).toLowerCase().replace(SIDE_TOKEN, " ").replace(/\b(rt\.|lt\.|both|right|left|bilateral)\s*/g, "").replace(/\bm\.$/, "").replace(/[^a-z0-9ก-๙ ]+/g, " ").replace(/\s+/g, " ").trim();
+  function guessCondition(res) {
+    if (!SG || !res || !res.lines) return null;
+    const seen = new Set();
+    res.lines.forEach((l) => { if (l.sec !== "problem" && !/___/.test(l.line)) { const t = normLine(l.line); if (t.length >= 4) seen.add(t); } });
+    res.heard.forEach((h) => { const t = normLine(h); if (t.length >= 4) seen.add(t); });
+    if (seen.size < 3) return null;
+    const region = res.region || "";
+    let best = null;
+    Object.entries(SG.conditions).forEach(([k, v]) => {
+      const r = condRegion(k);
+      if (region && r !== region && r !== "General / other") return;
+      let score = 0, matched = 0; const hitLines = [];
+      Object.values(v.s).forEach((lines) => lines.forEach(([line, n]) => { const t = normLine(line); if (t.length >= 4 && seen.has(t)) { matched++; score += Math.min(n, 30) + (r === region ? 5 : 0); hitLines.push(t); } }));
+      if (matched >= 2 && (!best || score > best.score)) best = { name: dxDisplay(k), key: k, score, matched, n: v.n, hitLines };
+    });
+    return best;
+  }
   function setCondition(name, auto) {
     name = (name || "").trim(); if (!name) return;
     const f = dxField();
@@ -296,7 +330,7 @@
     S.condition = name; S.conditionAuto = !!auto;
     if (!hasLine(f, name)) append(f, name, "", true);
     const r = regionForCondition(name);
-    if (r && r !== S.region) { S.region = r; $("region").value = r; }
+    if (r && r !== S.region && (r !== "General / other" || !S.region || S.region === "General / other")) { S.region = r; $("region").value = r; }
     // spine, posture and whole-body conditions have no side: scoliosis, low back, neck, MPS…
     if ((MIDLINE.has(S.region) || /scoliosis|posture|spine|spinal|lumbar|cervical|thoracic|core|pelvic|coccy/i.test(name)) && !S.sideManual && !S.sideAuto) setSide("", true);
     S.showAll = false;
@@ -342,7 +376,7 @@
     if (!S.condition) { host.hidden = true; $("dxq").placeholder = "Type what you found — plantar, MPS, ACL, frozen shoulder…"; return; }
     host.hidden = false; $("dxq").placeholder = "Add another condition…";
     const tag = document.createElement("span"); tag.className = "tag";
-    tag.innerHTML = `<span>${escapeHtml(S.condition)}</span><small>${escapeHtml(S.region)}${S.side ? " · " + escapeHtml(S.side) : " · no side"}</small>`;
+    tag.innerHTML = `<span>${escapeHtml(S.condition)}</span><small>${escapeHtml(S.region)}${S.side ? " · " + escapeHtml(S.side) : " · no side"}${S.conditionGuess ? " · closest match in the charts" : ""}</small>`;
     const x = document.createElement("button"); x.type = "button"; x.title = "Remove this condition"; x.textContent = "×"; x.onclick = clearCondition;
     tag.appendChild(x); host.appendChild(tag);
   }
@@ -516,11 +550,15 @@
   function usualFor(modality) {
     if (!SG) return {};
     const hit = S.condition ? findCondition(currentCondition()) : null;
-    const own = hit && hit[1].m ? hit[1].m : {};
+    const ownRegion = hit ? condRegion(hit[0]) : "";
+    const sameRegion = hit && (isGeneral() || ownRegion === S.region);
+    const own = hit && hit[1].m && sameRegion ? hit[1].m : {};
     const reg = isGeneral() ? {} : regionUsual(S.region);
-    const all = SG.usual || {};
+    const all = isGeneral() ? (SG.usual || {}) : {};   // clinic-wide areas belong to other regions; numbers below
+    const nums = SG.usual || {};
     const f = Object.assign({}, all[modality] || {}, reg[modality] || {}, own[modality] || {});
-    f.position = own.position || reg.position || all.position || "";
+    ["mhz", "w", "v", "min", "hz", "kg", "j", "grade"].forEach((k) => { if (!f[k] && nums[modality] && nums[modality][k]) f[k] = nums[modality][k]; });
+    f.position = own.position || reg.position || (SG.usual && SG.usual.position) || "";
     return f;
   }
   const POSITION_NAME = { supine: "Supine lying", prone: "Prone lying", "side lying": "Side lying", sitting: "Sitting", standing: "Standing", "half lying": "Half lying", "long sitting": "Long sitting" };
@@ -539,11 +577,27 @@
   }
   const modalityLine = (name) => fillUsual(V.TREATMENT_MODALITIES[name], name);
   // a line the detector wrote from the notes keeps every number it heard; only the blanks left are filled
-  function fillTreatmentBlanks(line) {
+  function sessionMuscles(res) {
+    const out = []; const take = (l) => { const m = /^\s*(?:Tightness|Tenderness|Trigger point) at (.+?)(?: m\.)?\s*$/.exec(l); if (m && !out.includes(m[1])) out.push(m[1]); };
+    if (res && res.lines) res.lines.filter((l) => l.heading === "Palpation").forEach((l) => take(l.line));   // the notes being read right now
+    const t = target("objective", "Palpation"); if (t && t[0]) val(t[0]).split("\n").forEach(take);
+    return out;
+  }
+  function fillTreatmentBlanks(line, res) {
     if (!/___/.test(line)) return line;
     for (const [name, tpl] of Object.entries(V.TREATMENT_MODALITIES)) {
       const head = tpl.split(/  |: /)[0];
-      if (line.startsWith(head)) return fillUsual(line, name);
+      if (!line.startsWith(head)) continue;
+      // massage and stretching go to the muscles this session found tight or tender, before the clinic's usual
+      let o = line;
+      if (/^(Massage|Stretching|Passive stretch|Stretching exercise): ___/.test(o)) { const ms = sessionMuscles(res).slice(0, 3).join(", "); if (ms) o = o.replace(/^(Massage|Stretching|Passive stretch|Stretching exercise): ___/, "$1: " + ms); }
+      o = fillUsual(o, name);
+      // still no area: the muscles this very session found tight or tender are where the hands went
+      if (/(Stretching|Massage|Passive stretch|Stretching exercise): ___|Hot pack \(large \/ small\) on ___|Cold pack on ___|Area: ___/.test(o)) {
+        const ms = sessionMuscles(res).slice(0, 3).join(", ");
+        if (ms) o = o.replace(/^(Stretching|Massage|Passive stretch|Stretching exercise): ___/, "$1: " + ms).replace(/\bon ___/, "on " + ms).replace(/Area: ___/, "Area: " + ms);
+      }
+      return o;
     }
     return line;
   }
@@ -937,7 +991,7 @@
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
   $("copy").onclick = copyNote;
-  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();

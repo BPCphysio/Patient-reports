@@ -295,10 +295,10 @@ window.DETECT = (function () {
   add("Generalised hypermobility", "generalised hypermobility", "generalized hypermobility", "hypermobility syndrome", "ข้อหลวมทั่วตัว"); add("Work-related musculoskeletal disorder", "work related", "work-related", "wmsd", "บาดเจ็บจากการทำงาน");
   add("Office syndrome", "office syndrome", "ออฟฟิศซินโดรม", "ออฟฟิตซินโดรม"); add("Muscle tightness from hormonal changes during pregnancy", "pregnancy tightness", "ตึงจากตั้งครรภ์");
   add("Scoliosis", "scoliosis", "scoriosis", "secoliosis", "scoliose", "หลังคด", "กระดูกสันหลังคด");
-  add("Sacroiliac joint dysfunction", "si joint dysfunction", "s i joint", "sacroiliac dysfunction", "si joint problem", "เอสไอจอย", "เอสไอจอยดิสฟังก์ชัน", "ข้อต่อเอสไอ", "sij problem");
+  add("Sacroiliac joint dysfunction", "si joint dysfunction", "s i joint", "si toy", "si joy", "your joy dysfunction", "sacro iliac", "sacroiliac dysfunction", "si joint problem", "เอสไอจอย", "เอสไอจอยดิสฟังก์ชัน", "ข้อต่อเอสไอ", "sij problem");
   add("Muscle imbalance", "มัสเซลอินบาลานซ์", "มัสเซิลอิมบาลานซ์", "มัสเซิลอินบาลานซ์", "muscle in balance", "muscle imbalanced", "kinetic imbalance");
   add("Office syndrome", "ออฟฟิศซินโดม", "ออฟฟิสซินโดม", "office syndrom");
-  add("Degenerative disc disease", "degenerative of your low back", "degenerative low back", "degeneration of your low back", "degenerative change", "degenerative changes", "wear and tear of the spine", "หมอนรองกระดูกเสื่อม", "กระดูกสันหลังเสื่อม");
+  add("Degenerative disc disease", "degenerative of your low back", "degenerative of your low", "degenerative of the low back", "degeneration in your lower back", "degenerative low back", "degeneration of your low back", "degenerative change", "degenerative changes", "wear and tear of the spine", "หมอนรองกระดูกเสื่อม", "กระดูกสันหลังเสื่อม");
   add("Cervical spondylosis", "narrowing at c6 c7", "narrowing around c6", "c6 and c7 is narrowing", "cervical narrowing");
   const GENERIC_DX = new Set(["Muscle tightness", "Muscle spasm", "General muscle tightness", "Scoliosis", "Swelling", "Poor posture", "Muscle tension", "Muscle strain", "Overuse"]);
   const DXCTX = /\b(diagnos\w*|dx|impression|analysis|assessment|condition|suspect\w*|likely|consistent with)\b|วินิจฉัย|น่าจะเป็น|สงสัย|เป็นโรค/;
