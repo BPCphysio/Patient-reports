@@ -1067,6 +1067,14 @@ window.DETECT = (function () {
     }
 
     // Problem list (new-patient form)
+    {
+      const L = out.lines;
+      const has = (fn) => L.some(fn);
+      if (has((l) => /range of motions$/.test(l.heading) && /limited|at end range|by tightness|by pain|°/.test(l.line))) push("problem", "", "Limited ROM");
+      if (has((l) => l.heading === "Palpation" && /^(Tightness|Trigger point|Muscle spasm)/.test(l.line)) || has((l) => l.sec === "analysis" && /tightness|tight|myofascial|mps/i.test(l.line))) push("problem", "", "Muscle tightness");
+      if (has((l) => l.heading === "Muscle power" && /weak|grade [0-4]/i.test(l.line))) push("problem", "", "Muscle weakness");
+      if (has((l) => l.heading === "Observation" && /swelling|increased skin temperature|redness|bruising/i.test(l.line) && !/^no /i.test(l.line))) push("problem", "", "Inflammation");
+    }
     pick(scan(entries(V.IMPAIRMENTS.filter((x) => x !== "Pain")), low)).forEach((h) => push("problem", "", h.term));
     if (painHits.length || body.some((h) => PAIN.test(ctx(low, h.i, h.len, 25)))) push("problem", "", "Pain");
 
@@ -1099,5 +1107,14 @@ window.DETECT = (function () {
     return new Set(uniqTerms(scan(entries(terms), low)));
   }
 
-  return { run, hits, aliasesOf };
+  // which regions a line belongs to, from its body words and muscle names (empty = no clue)
+  const MUSCLE_REGION = {};
+  Object.entries(V.REGION_PROFILE || {}).forEach(([reg, P]) => { (P.muscle_groups || []).forEach((g) => (V.MUSCLES[g] || []).forEach((m) => { (MUSCLE_REGION[m.toLowerCase()] = MUSCLE_REGION[m.toLowerCase()] || new Set()).add(reg); })); });
+  function regionsOf(text) {
+    const low = norm(String(text || "")); const out = new Set();
+    pick(scan(BODY_ENTRIES, low)).forEach((b) => { if (REGION_OF[b.term]) out.add(REGION_OF[b.term]); });
+    pick(scan(entries(ALL_MUSCLES), low)).forEach((m) => { const regs = MUSCLE_REGION[m.term.toLowerCase()]; if (regs) regs.forEach((r) => out.add(r)); });
+    return out;
+  }
+  return { run, hits, aliasesOf, regionsOf };
 })();

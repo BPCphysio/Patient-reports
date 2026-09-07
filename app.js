@@ -161,7 +161,7 @@
       });
       S.auto[field] = next; count += next.length;
     });
-    renderOutput(); scheduleSuggest();
+    renderOutput(); scheduleSuggest(); syncChips();
     const st = $("fillstate");
     if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.${guessed ? ` No diagnosis was said, so the condition is the clinic's closest match to these findings: ${guessed.name} (${guessed.matched} findings in common with ${guessed.n} charts) — remove it if that is not what you found.` : ""}` : "Nothing recognised yet — keep going, or use the options in section 2.";
     return count;
@@ -233,14 +233,32 @@
   }
 
   // ---------- chip rendering ----------
+  // the part of a line that identifies it, whatever numbers or areas were filled in after
+  const lineHead = (t) => String(t).replace(/\s*(?:  |: |: ___| — |; Rt\.).*$/, "").replace(/\s*___.*$/, "").trim();
+  function lineInField(field, line) {
+    const head = lineHead(line).toLowerCase(); if (!head) return "";
+    const exact = val(field).split("\n").map((l) => l.trim()).find((l) => l === line.trim());
+    if (exact) return exact;
+    return val(field).split("\n").map((l) => l.trim()).find((l) => l.toLowerCase().startsWith(head) && (l.length === head.length || /[\s:;—(]/.test(l.charAt(head.length)))) || "";
+  }
+  function syncChips() {
+    document.querySelectorAll("#builder button.chip[data-field]").forEach((b) => { const inBox = lineInField(b.dataset.field, b.dataset.line); b.classList.toggle("on", !!inBox); b.title = inBox ? "In the box — tap to take it out" : (b.classList.contains("heard") ? "Heard in the transcript" : ""); });
+  }
   function chips(terms, field, heading, transform) {
     const wrap = document.createElement("div"); wrap.className = "chips";
     const { ordered, heard } = orderByTranscript(terms);
     ordered.forEach((t) => {
       const b = document.createElement("button"); b.type = "button";
-      b.className = "chip" + (heard.has(t) ? " heard" : ""); b.textContent = t;
+      const line = transform ? transform(t) : t;
+      b.className = "chip" + (heard.has(t) ? " heard" : ""); b.textContent = t; b.dataset.field = field; b.dataset.line = line;
       if (heard.has(t)) b.title = "Heard in the transcript";
-      b.onclick = () => append(field, transform ? transform(t) : t, heading);
+      if (lineInField(field, line)) b.classList.add("on");
+      b.onclick = () => {
+        const current = transform ? transform(t) : t; b.dataset.line = current;
+        const inBox = lineInField(field, current);
+        if (inBox) removeLine(field, inBox); else append(field, current, heading);
+        renderOutput(); syncChips();
+      };
       wrap.appendChild(b);
     });
     return wrap;
@@ -334,12 +352,35 @@
     // spine, posture and whole-body conditions have no side: scoliosis, low back, neck, MPS…
     if ((MIDLINE.has(S.region) || /scoliosis|posture|spine|spinal|lumbar|cervical|thoracic|core|pelvic|coccy/i.test(name)) && !S.sideManual && !S.sideAuto) setSide("", true);
     S.showAll = false;
-    renderBuilder(); prefillTests(); renderOutput(); renderCondTag(); renderSuggest();
+    renderBuilder(); prefillTests(); applyPack(); renderOutput(); renderCondTag(); renderSuggest();
   }
   // The usual special tests for this region appear in Objective with the result blank.
   // The physio deletes the ones not done and marks the rest + or -. A result read from
   // the notes replaces the blank line for that test (see autoFill).
   const testName = (line) => line.replace(/\s*(Rt\.|Lt\.|Both)?\s*:\s*(\+ve|-ve|___ve)\s*$/, "").trim();
+  // scoliosis, ACL, frozen shoulder…: the lines a BPC new-patient record carries for them.
+  // Two sources, merged: the hand-written routine (V.CONDITION_PACKS) for conditions whose
+  // charts are mostly prose, and the measurement templates read straight from this
+  // condition's own charts (suggest.js "p" — numbers blanked, only lines repeated
+  // across 3+ charts). Both can fire together; lines already in the box are skipped.
+  function applyPack() {
+    if (!S.condition) return;
+    const handKey = V.CONDITION_PACKS ? Object.keys(V.CONDITION_PACKS).find((re) => new RegExp(re, "i").test(S.condition)) : null;
+    const hit = SG ? findCondition(currentCondition()) : null;
+    const chartPack = hit && hit[1].p ? hit[1].p : null;
+    if (!handKey && !chartPack) return;
+    const packKey = (handKey || "") + "|" + (hit ? hit[0] : "");
+    if (S.packApplied === packKey) return; S.packApplied = packKey;
+    const merged = {};
+    if (chartPack) Object.entries(chartPack).forEach(([heading, lines]) => { merged[heading] = (merged[heading] || []).concat(lines); });
+    if (handKey) Object.entries(V.CONDITION_PACKS[handKey]).forEach(([heading, lines]) => { merged[heading] = (merged[heading] || []).concat(lines); });
+    Object.entries(merged).forEach(([heading, lines]) => {
+      const sec = heading === "Exercise" ? "exercise" : "objective";
+      const t = target(sec, heading); if (!t || !t[0]) return;
+      lines.forEach((line) => { if (!hasLine(t[0], line)) append(t[0], line, t[1] || "", true); });
+    });
+    renderOutput();
+  }
   function prefillTests() {
     const P = V.REGION_PROFILE[S.region]; if (!P || S.region === "General / other") return;
     const t = target("objective", "Special test"); if (!t || !t[0]) return;
@@ -404,6 +445,14 @@
     return s.replace(/\s+/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/\(\s+/g, "(").trim();
   }
   // Lines that already exist as standard options below the box are not repeated as suggestions.
+  // a line about another part of the body has no place in this note (a neck case does not get the hamstrings)
+  function offRegion(text) {
+    if (isGeneral() || !DETECT.regionsOf) return false;
+    const regs = DETECT.regionsOf(text); if (!regs.size) return false;
+    if (regs.has(S.region)) return false;
+    const NEAR = { "Neck / cervical": ["Shoulder", "Thoracic spine"], "Shoulder": ["Neck / cervical", "Thoracic spine"], "Thoracic spine": ["Neck / cervical", "Shoulder", "Trunk / lumbar"], "Trunk / lumbar": ["Hip", "Thoracic spine"], "Hip": ["Trunk / lumbar", "Knee"], "Knee": ["Hip", "Ankle & foot"], "Ankle & foot": ["Knee"], "Elbow, wrist & hand": ["Shoulder"] };
+    return ![...regs].some((r) => (NEAR[S.region] || []).includes(r));
+  }
   const VOCAB_TERMS = new Set([...V.OBSERVATION, ...V.PALPATION_FINDINGS, ...(V.PALPATION_NORMALS || []), ...V.STRENGTH, ...V.FUNCTIONAL,
     ...V.SPECIAL_TESTS, ...V.PLAN_GOALS, ...V.POSITIONS, ...(V.POST_TREATMENT || []), ...(V.SUBJECTIVE_PHRASES || []), ...V.SESSION_LENGTHS,
     ...Object.keys(V.TREATMENT_MODALITIES), ...Object.values(V.DIAGNOSES).flat(), ...V.ROM_QUALIFIERS].map((t) => t.toLowerCase()));
@@ -448,8 +497,13 @@
       if (!lines.length) return;
       const seen = new Set();
       const shown = lines.map(([line]) => withSide(line)).filter((t) => {
-        const k = t.toLowerCase(); if (!t || seen.has(k) || VOCAB_TERMS.has(k) || hasLine(field, t)) return false; seen.add(k); return true;
-      }).slice(0, 8);
+        const k = t.toLowerCase(); if (!t || seen.has(k) || hasLine(field, t)) return false;
+        if (S.condition && k === S.condition.toLowerCase()) return false;
+        if (field === "Analysis" || field === "Diagnosis") { const same = findCondition(t.toLowerCase()); if (same && same[0] === hit[0]) return false; }   // the condition itself under another spelling
+        if (/^dx:?\s/i.test(t)) return false;
+        if (offRegion(t)) return false;
+        seen.add(k); return true;
+      }).slice(0, 12);
       if (!shown.length) return;
       const p = document.createElement("p"); p.className = "sub";
       p.textContent = `For ${hit[0]} (${hit[1].n} BPC charts) — tap to add` + (S.side ? `, side ${S.side}` : "");
@@ -477,17 +531,18 @@
     let [d, b] = details("Observation");
     b.appendChild(chips([...P.observation, ...(V.OBSERVATION_BY_REGION[region] || [])], field, "Observation")); showAllLink(b); host.appendChild(d);
 
-    [d, b] = details("Palpation — finding, side, muscle");
+    [d, b] = details(isGeneral() ? "Palpation — pick the finding, then the muscle" : `Palpation — pick the finding, then the muscle (${S.region.toLowerCase()})`);
     const groups = P.muscle_groups.filter((g) => V.MUSCLES[g]);
-    let finding = V.PALPATION_FINDINGS[0], side = S.side || "", group = groups[0];
-    const row = document.createElement("div"); row.className = "row3";
+    let finding = V.PALPATION_FINDINGS[1] || V.PALPATION_FINDINGS[0], side = S.side || "";
+    const musclesHere = [...new Set(groups.flatMap((g) => V.MUSCLES[g]))];
+    const findRow = document.createElement("div"); findRow.className = "chips";
     const musWrap = document.createElement("div");
     const palpLineX = (f, m, s) => (V.MUSCLES["Ligaments & structures"] || []).includes(m) ? `${f} at ${s ? s + " " : ""}${m}` : palpLine(f, m, s);
-    const redraw = () => { musWrap.innerHTML = ""; musWrap.appendChild(chips(V.MUSCLES[group], field, "Palpation", (m) => palpLineX(finding, m, side))); };
-    row.appendChild(selectEl(V.PALPATION_FINDINGS, (e) => { finding = e.target.value; redraw(); }));
-    const sideSel = selectEl(["", ...V.SIDES], (e) => { side = e.target.value; redraw(); }); sideSel.value = side; row.appendChild(sideSel);
-    row.appendChild(selectEl(groups, (e) => { group = e.target.value; redraw(); }));
-    b.appendChild(row); b.appendChild(musWrap); redraw();
+    const redraw = () => { musWrap.innerHTML = ""; musWrap.appendChild(sub(`${finding}${side ? " · " + side : ""} — at which muscle?`)); musWrap.appendChild(chips(musclesHere, field, "Palpation", (m) => palpLineX(finding, m, side))); };
+    V.PALPATION_FINDINGS.forEach((f) => { const fb = document.createElement("button"); fb.type = "button"; fb.className = "chip sel" + (f === finding ? " on" : ""); fb.textContent = f; fb.onclick = () => { finding = f; findRow.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === fb)); redraw(); }; findRow.appendChild(fb); });
+    const sideRow = document.createElement("div"); sideRow.className = "row3";
+    const sideSel = selectEl(["", ...V.SIDES], (e) => { side = e.target.value; redraw(); }); sideSel.value = side; sideRow.appendChild(sideSel);
+    b.appendChild(findRow); b.appendChild(sideRow); b.appendChild(musWrap); redraw();
     if (V.PALPATION_NORMALS) { b.appendChild(sub("Nothing found")); b.appendChild(chips(V.PALPATION_NORMALS, field, "Palpation")); }
     const circ = document.createElement("button"); circ.type = "button"; circ.className = "chip"; circ.textContent = "+ Circumference line";
     circ.onclick = () => append(field, circLine(), "Palpation"); b.appendChild(circ);
@@ -556,7 +611,9 @@
     const reg = isGeneral() ? {} : regionUsual(S.region);
     const all = isGeneral() ? (SG.usual || {}) : {};   // clinic-wide areas belong to other regions; numbers below
     const nums = SG.usual || {};
+    const pickArea = (src) => (src && src[modality] && src[modality].area && !offRegion(src[modality].area) ? src[modality].area : "");
     const f = Object.assign({}, all[modality] || {}, reg[modality] || {}, own[modality] || {});
+    f.area = pickArea(own) || pickArea(reg) || pickArea(all) || "";
     ["mhz", "w", "v", "min", "hz", "kg", "j", "grade"].forEach((k) => { if (!f[k] && nums[modality] && nums[modality][k]) f[k] = nums[modality][k]; });
     f.position = own.position || reg.position || (SG.usual && SG.usual.position) || "";
     return f;
@@ -612,7 +669,7 @@
     [d, b] = details(isGeneral() ? "Exercise" : `Exercise — ${S.region.toLowerCase()}`, !isGeneral());
     const exGroups = P.exercise_groups.filter((g) => V.EXERCISES[g]);
     // the group that fits the condition opens first: an ACL tear opens the ligament rehab list, not the neck
-    const wantGroup = S.condition && /\b(acl|pcl|mcl|lcl|aclr)\b|ligament|meniscus|meniscal|reconstruction|post.?op|arthroscop/i.test(S.condition) ? "Knee — ACL & ligament rehab" : "";
+    const wantGroup = !S.condition ? "" : /\b(acl|pcl|mcl|lcl|aclr)\b|ligament|meniscus|meniscal|reconstruction|post.?op|arthroscop/i.test(S.condition) ? "Knee — ACL & ligament rehab" : /scoliosis|kyphos|posture|postural/i.test(S.condition) ? "Scoliosis — Schroth & posture" : "";
     const condHit = S.condition && SG ? findCondition(currentCondition()) : null;
     const usualDose = condHit && condHit[1].m && condHit[1].m.dose ? condHit[1].m.dose : "";
     const doses = usualDose && !V.EX_DOSAGE.includes(usualDose) ? [usualDose, ...V.EX_DOSAGE] : V.EX_DOSAGE;
@@ -762,10 +819,10 @@
       };
       r.onerror = (e) => { toast(e.error === "not-allowed" ? "Microphone blocked — allow it in the browser" : "Dictation stopped: " + e.error); stopMic(); };
       r.onend = () => { if (active && active.r === r) { try { r.start(); } catch { stopMic(); } } };
-      r.start(); active = { r, btn }; btn.classList.add("on"); btn.textContent = "⏹ Stop";
+      r.start(); active = { r, btn }; btn.classList.add("on"); btn.textContent = `⏹ Stop (${S.lang === "en-US" ? "English" : "Thai"})`;
     };
   }
-  function stopMic() { if (!active) return; const { r, btn } = active; active = null; r.onend = null; try { r.stop(); } catch {} btn.classList.remove("on"); btn.textContent = "🎙 Dictate"; }
+  function stopMic() { if (!active) return; const { r, btn } = active; active = null; r.onend = null; try { r.stop(); } catch {} btn.classList.remove("on"); btn.textContent = `🎙 Dictate (${S.lang === "en-US" ? "English" : "Thai"})`; }
 
   // ---------- photo of the patient's chart -> text ----------
   // Runs Tesseract inside this browser. The photo never leaves the phone or PC;
@@ -983,7 +1040,14 @@
   $("sides").querySelectorAll("button").forEach((b) => b.onclick = () => { S.sideManual = true; setSide(b.dataset.s); renderCondTag(); renderBuilder(); });
   $("region").addEventListener("change", () => { S.showAll = false; prefillTests(); });
   $("transcript").oninput = () => { renderNums(); renderBuilder(); scheduleFill(); };
-  $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => { S.lang = b.dataset.l; $("langs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); });
+  const langName = () => (S.lang === "en-US" ? "English" : "Thai");
+  const micLabel = () => { document.querySelectorAll("button.mic[data-target]").forEach((b) => { if (!b.classList.contains("on")) b.textContent = `🎙 Dictate (${langName()})`; }); };
+  $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    S.lang = b.dataset.l; $("langs").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    micLabel();
+    if (active) { const btn = active.btn; stopMic(); btn.click(); toast(`Now listening in ${langName()}`); }   // switch mid-dictation
+  });
+  micLabel();
   wireMic($("trmic"));
   $("photo").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; if (files.length) readPhotos(files); };
   $("audio").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) transcribeAudio(f); };
@@ -991,7 +1055,7 @@
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
   $("copy").onclick = copyNote;
-  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.packApplied = ""; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();

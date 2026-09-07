@@ -96,6 +96,10 @@
   .sugg:empty { display:none; }
   .sugg { display:grid; gap:6px; margin-top:4px; }
   .chip.sg { border-style:dashed; background:var(--cream); max-width:100%; white-space:normal; }
+  .chip.on { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .chip.on::before { content:"✓ "; font-weight:700; }
+  .chip.on.heard::before { content:"✓ "; color:#fff; }
+  .chip.sel.on { background:var(--cyan-deep); border-color:var(--cyan-deep); }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
 
@@ -203,7 +207,7 @@
           <div class="tools">
             <label class="mic photo" id="audiobtn">🎧 Recording<input type="file" id="audio" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.mp4" hidden></label>
             <label class="mic photo" id="photobtn">📷 Photo of chart<input type="file" id="photo" accept="image/*" capture="environment" multiple hidden></label>
-            <button class="mic" id="trmic" data-target="transcript">🎙 Dictate</button>
+            <button class="mic" id="trmic" data-target="transcript">🎙 Dictate (Thai)</button>
           </div>
         </div>
         <textarea id="transcript" rows="6" placeholder="Paste the transcript, dictate, add a photo, or just type — any language."></textarea>

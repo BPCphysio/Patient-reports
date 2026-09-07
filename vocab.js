@@ -963,6 +963,32 @@ window.VOCAB = {
    "Return-to-run progression",
    "Sport-specific drill"
   ],
+  "Scoliosis — Schroth & posture": [
+   "Schroth exercise — muscle cylinder",
+   "Schroth exercise — 50x",
+   "Schroth exercise — door handle",
+   "Schroth exercise — folded",
+   "Schroth exercise — side plank",
+   "Schroth breathing (rotational angular breathing)",
+   "Thoracic spine mobility",
+   "Abdominal hollowing with breathing control",
+   "Abdominal hollowing with ball slide",
+   "QL stretch",
+   "Neck stretch",
+   "Cat camel",
+   "Bird dog",
+   "Dead bug",
+   "Side plank",
+   "Prone Y raise",
+   "Scapular retraction",
+   "Chin tuck",
+   "Wall angel",
+   "Hip hinge",
+   "Posture correction in front of mirror",
+   "Diaphragmatic breathing",
+   "Thoracic rotation open book",
+   "Chest expansion breathing"
+  ],
   "Balance & return to sport": [
    "Single leg balance eyes open",
    "Single leg balance eyes closed",
@@ -1380,6 +1406,7 @@ window.VOCAB = {
     "Neck & shoulder"
    ],
    "exercise_groups": [
+    "Scoliosis — Schroth & posture",
     "Neck & upper back",
     "Trunk & core"
    ],
@@ -1827,6 +1854,7 @@ window.VOCAB = {
     "Knee",
     "Ankle & foot",
     "Knee — ACL & ligament rehab",
+    "Scoliosis — Schroth & posture",
     "Balance & return to sport",
     "Pilates & general conditioning"
    ],
@@ -2027,5 +2055,317 @@ window.VOCAB = {
    "Recommendation",
    "Physiotherapy Treatments"
   ]
+ },
+ "CONDITION_PACKS": {
+  "scoliosis|spinal curve|kyphoscoliosis": {
+   "Observation": [
+    "Anterior view: head tilt to ___ side",
+    "Anterior view: shoulder (AC joint) level ___ side higher",
+    "Anterior view: ASIS level ___ side higher",
+    "Anterior view: distance between toes ___ cm, heels ___ cm",
+    "Lateral view: plumb line (lateral malleolus – knee – humeral head – ear) ___",
+    "Lateral view: pelvis ___ tilt",
+    "Posterior view: scapular level ___ side higher, alignment ___",
+    "Posterior view: PSIS level ___ side higher",
+    "Posterior view: thoracic curve convex to ___, lumbar curve convex to ___",
+    "Posterior view: heels ___ (pronation / neutral / supination)"
+   ],
+   "Special test": [
+    "Adam's forward bend test with scoliometer: thoracic curve ___°, lumbar curve ___°"
+   ],
+   "Active range of motions": [
+    "Lumbar flexion (middle finger to floor): ___ cm",
+    "Lateral lumbar flexion to Rt. (middle finger to floor): ___ cm",
+    "Lateral lumbar flexion to Lt. (middle finger to floor): ___ cm"
+   ],
+   "Functional test": [
+    "Chest expansion: upper ___ cm, middle ___ cm, lower ___ cm",
+    "Core level test by biofeedback: Lv. ___"
+   ],
+   "Exercise": [
+    "Schroth exercise — muscle cylinder — ___",
+    "Thoracic spine mobility — ___",
+    "Abdominal hollowing with breathing control — ___"
+   ]
+  },
+  "\\b(acl|aclr|pcl)\\b|anterior cruciate|posterior cruciate|cruciate ligament": {
+   "Observation": [
+    "Swelling: circumference ___ cm above patella Rt. / ___ cm Lt.",
+    "Scar: ___",
+    "Quadriceps atrophy: mid-thigh circumference ___ cm Rt. / ___ cm Lt."
+   ],
+   "Active range of motions": [
+    "Knee flexion: ___° Rt. / ___° Lt.",
+    "Knee extension: ___° (extension lag ___°)"
+   ],
+   "Functional test": [
+    "Quad lag: ___",
+    "Single leg squat: ___",
+    "Gait: ___ (weight bearing ___, crutches ___)"
+   ]
+  },
+  "frozen shoulder|adhesive capsulitis": {
+   "Active range of motions": [
+    "Shoulder flexion: ___° Rt. / ___° Lt.",
+    "Shoulder abduction: ___° Rt. / ___° Lt.",
+    "Shoulder ER: ___° Rt. / ___° Lt.",
+    "Shoulder IR: ___° Rt. / ___° Lt.",
+    "Hand behind back: reaches ___ (level)"
+   ],
+   "Passive range of motions": [
+    "Shoulder flexion / abduction / ER / IR: ___° with capsular end feel"
+   ]
+  },
+  "rotator cuff|shoulder impingement|subacromial impingement|supraspinatus tear|subacromial": {
+   "Special test": [
+    "Drop arm test: ___"
+   ],
+   "Active range of motions": [
+    "Shoulder abduction: ___° (painful arc ___°–___°)"
+   ],
+   "Muscle power": [
+    "Supraspinatus: grade ___/5",
+    "Infraspinatus: grade ___/5",
+    "Subscapularis (lift-off / belly press): grade ___/5"
+   ]
+  },
+  "shoulder instability|glenohumeral instability|\\bslap\\b|shoulder labral tear|shoulder dislocat|shoulder subluxat|glenohumeral dislocat": {
+   "Special test": [
+    "Relocation test: ___",
+    "Load and shift test: ___"
+   ]
+  },
+  "tennis elbow|lateral epicondylitis|lateral epicondylalgia": {
+   "Muscle power": [
+    "Grip strength (dynamometer): ___ kg Rt. / ___ kg Lt."
+   ],
+   "Palpation": [
+    "Tenderness at lateral epicondyle: ___"
+   ]
+  },
+  "golfer's elbow|medial epicondylitis|medial epicondylalgia": {
+   "Special test": [
+    "Reverse Cozen's test: ___"
+   ],
+   "Muscle power": [
+    "Grip strength (dynamometer): ___ kg Rt. / ___ kg Lt."
+   ],
+   "Palpation": [
+    "Tenderness at medial epicondyle: ___"
+   ]
+  },
+  "carpal tunnel": {
+   "Special test": [
+    "Durkan's (carpal compression) test: ___"
+   ],
+   "Neurological examination": [
+    "Sensation, median nerve distribution: ___"
+   ]
+  },
+  "de quervain": {
+   "Observation": [
+    "Swelling over first dorsal compartment: ___"
+   ]
+  },
+  "\\bmcl\\b|\\blcl\\b": {
+   "Special test": [
+    "Valgus stress test at 0°: ___, at 30°: ___",
+    "Varus stress test at 0°: ___, at 30°: ___"
+   ],
+   "Observation": [
+    "Joint line swelling: ___"
+   ]
+  },
+  "meniscus|meniscal": {
+   "Palpation": [
+    "Joint line tenderness: ___ side"
+   ],
+   "Active range of motions": [
+    "Knee flexion: ___° (pain at ___°)"
+   ]
+  },
+  "patellofemoral|\\bpfps\\b|runner's knee|anterior knee pain": {
+   "Observation": [
+    "Q angle: ___°",
+    "Patellar tracking / tilt: ___"
+   ],
+   "Special test": [
+    "Clarke's sign: ___",
+    "Patellar apprehension: ___"
+   ],
+   "Functional test": [
+    "Single leg squat: ___° dynamic knee valgus",
+    "Step-down test: ___"
+   ]
+  },
+  "knee.*osteoarthritis|osteoarthritis.*knee|\\bknee oa\\b": {
+   "Observation": [
+    "Knee alignment: varus / valgus ___°",
+    "Effusion: ___"
+   ],
+   "Active range of motions": [
+    "Knee flexion: ___° Rt. / ___° Lt.",
+    "Knee extension: ___°"
+   ],
+   "Functional test": [
+    "Timed up and go: ___ sec",
+    "Sit to stand x5: ___ sec"
+   ]
+  },
+  "total knee|\\btka\\b|post[- ]?op.*knee|knee.*post[- ]?op|knee replacement": {
+   "Observation": [
+    "Wound: ___",
+    "Swelling: circumference ___ cm above patella Rt. / ___ cm Lt."
+   ],
+   "Active range of motions": [
+    "Knee flexion: ___°",
+    "Knee extension: ___° (extension lag ___°)"
+   ],
+   "Functional test": [
+    "Quad lag: ___",
+    "Gait: ___ (assistive device: ___)"
+   ]
+  },
+  "hip.*osteoarthritis|osteoarthritis.*hip|\\bhip oa\\b": {
+   "Active range of motions": [
+    "Hip flexion: ___°",
+    "Hip internal rotation: ___°, external rotation: ___°"
+   ],
+   "Special test": [
+    "Scour test: ___"
+   ],
+   "Functional test": [
+    "Timed up and go: ___ sec"
+   ]
+  },
+  "\\bfai\\b|femoroacetabular|hip impingement": {
+   "Active range of motions": [
+    "Hip flexion: ___°, internal rotation at 90° flexion: ___°"
+   ]
+  },
+  "total hip|\\btha\\b|post[- ]?op.*hip|hip.*post[- ]?op|hip replacement": {
+   "Observation": [
+    "Wound: ___",
+    "Leg length discrepancy: ___ cm"
+   ],
+   "Active range of motions": [
+    "Hip flexion: ___° (precaution: no flexion beyond ___°)"
+   ],
+   "Functional test": [
+    "Gait: ___ (assistive device: ___)",
+    "Trendelenburg sign: ___"
+   ]
+  },
+  "hamstring strain|hamstring tear": {
+   "Palpation": [
+    "Tenderness at ___ cm from ischial tuberosity"
+   ],
+   "Active range of motions": [
+    "Active knee extension test: ___° deficit"
+   ],
+   "Functional test": [
+    "Single leg bridge: ___ reps"
+   ]
+  },
+  "plantar fasciitis|plantar fasciopathy": {
+   "Palpation": [
+    "Tenderness at plantar fascia insertion (calcaneal tubercle): ___"
+   ],
+   "Active range of motions": [
+    "Ankle dorsiflexion, knee extended: ___°, knee flexed: ___°"
+   ],
+   "Functional test": [
+    "Single leg heel raise: ___ reps before pain"
+   ]
+  },
+  "achilles tend": {
+   "Observation": [
+    "Achilles thickening / nodularity: ___ cm above insertion"
+   ],
+   "Palpation": [
+    "Tenderness at Achilles tendon, ___ cm above calcaneal insertion"
+   ],
+   "Special test": [
+    "Royal London test: ___",
+    "Arc sign: ___"
+   ],
+   "Functional test": [
+    "Single leg heel raise: ___ reps, pain ___/10"
+   ]
+  },
+  "ankle sprain|lateral ankle ligament": {
+   "Observation": [
+    "Swelling: circumference at malleoli ___ cm Rt. / ___ cm Lt."
+   ],
+   "Active range of motions": [
+    "Ankle dorsiflexion: ___°, plantarflexion: ___°, inversion: ___°, eversion: ___°"
+   ],
+   "Functional test": [
+    "Single leg balance: ___ sec Rt. / ___ sec Lt.",
+    "Star excursion balance test: ___ cm"
+   ]
+  },
+  "spondylolisthesis|pars defect|spondylolysis": {
+   "Observation": [
+    "Step deformity palpable at L___: ___"
+   ],
+   "Special test": [
+    "Stork test (one-leg hyperextension): ___"
+   ],
+   "Active range of motions": [
+    "Lumbar extension: ___° (pain at end range: ___)"
+   ]
+  },
+  "sacroiliac|\\bsi joint\\b|\\bsij\\b": {
+   "Special test": [
+    "Thigh thrust test: ___"
+   ],
+   "Observation": [
+    "PSIS level: ___ side higher"
+   ]
+  },
+  "cervical radiculopathy|neck.*nerve root|cervical.*nerve root|c[3-8].{0,3}radiculopathy": {
+   "Special test": [
+    "Upper limb tension test: ___"
+   ],
+   "Neurological examination": [
+    "Dermatome C___: ___",
+    "Myotome C___: ___",
+    "Reflexes (biceps / triceps / brachioradialis): ___"
+   ]
+  },
+  "cervicogenic headache|tension.type headache|headache": {
+   "Special test": [
+    "Cervical flexion-rotation test: ___° Rt. / ___° Lt."
+   ],
+   "Palpation": [
+    "Tenderness at C1–C2, suboccipital region: ___"
+   ]
+  },
+  "^(?!.*(?:cervical|\\bneck\\b|\\bc[1-8]\\s*[-/]\\s*c?[1-8t]|\\bc[1-8]\\b)).*(?:low back pain|\\bhnp\\b|herniated disc|disc bulg|sciatica|disc herniation)": {
+   "Active range of motions": [
+    "Lumbar flexion (finger to floor): ___ cm",
+    "Lumbar extension: ___°"
+   ],
+   "Special test": [
+    "SLR: ___° Rt. / ___° Lt."
+   ],
+   "Neurological examination": [
+    "Dermatome L___/S___: ___",
+    "Myotome: ___",
+    "Reflexes (knee / ankle): ___"
+   ]
+  },
+  "myofascial pain syndrome|\\bmps\\b|office syndrome": {
+   "Palpation": [
+    "Trigger point at ___: ___ (with / without referred pain)"
+   ],
+   "Observation": [
+    "Forward head (tragus to wall): ___ cm"
+   ],
+   "Active range of motions": [
+    "Cervical rotation: ___° Rt. / ___° Lt."
+   ]
+  }
  }
 };
