@@ -243,6 +243,8 @@
   }
   function syncChips() {
     document.querySelectorAll("#builder button.chip[data-field]").forEach((b) => { const inBox = lineInField(b.dataset.field, b.dataset.line); b.classList.toggle("on", !!inBox); b.title = inBox ? "In the box — tap to take it out" : (b.classList.contains("heard") ? "Heard in the transcript" : ""); });
+    const painCur = val("Pain scale");
+    document.querySelectorAll("#builder button.chip[data-pain]").forEach((b) => b.classList.toggle("on", b.dataset.line === painCur));
   }
   function chips(terms, field, heading, transform) {
     const wrap = document.createElement("div"); wrap.className = "chips";
@@ -292,6 +294,27 @@
     ta.oninput = () => { S.fields[name] = ta.value; renderOutput(); if (/^(Analysis|Diagnosis)$/.test(name)) scheduleSuggest(); };
     w.appendChild(ta);
     const sg = document.createElement("div"); sg.className = "sugg"; sg.dataset.for = name; w.appendChild(sg);
+    return w;
+  }
+
+  // Jane's pain scale is a 0-10 slider, not a paragraph — one tap sets it,
+  // tapping the same number again clears it. No mic, no textarea: this is
+  // the "little tiny marker" the field actually is in a real chart.
+  function painScaleBox() {
+    const w = document.createElement("div"); w.className = "fld";
+    const head = document.createElement("div"); head.className = "head";
+    const b = document.createElement("b"); b.textContent = "Pain scale"; head.appendChild(b);
+    w.appendChild(head);
+    const row = document.createElement("div"); row.className = "chips";
+    const paint = () => { const cur = val("Pain scale"); row.querySelectorAll("button").forEach((btn) => btn.classList.toggle("on", btn.dataset.line === cur)); };
+    for (let n = 0; n <= 10; n++) {
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "chip sel";
+      btn.textContent = String(n); btn.dataset.line = String(n); btn.dataset.pain = "1";
+      btn.onclick = () => { const line = String(n); S.fields["Pain scale"] = val("Pain scale") === line ? "" : line; paint(); renderOutput(); };
+      row.appendChild(btn);
+    }
+    paint();
+    w.appendChild(row);
     return w;
   }
 
@@ -690,7 +713,7 @@
     "Observation": () => profile().observation, "Palpation": () => V.PALPATION_FINDINGS,
     "Muscle power": () => V.STRENGTH, "PAIVMS": () => V.PAIVMS, "Functional test": () => profile().functional,
     "Special test": () => profile().tests.map((n) => `${n}${S.side && S.side !== "Both" ? " " + S.side : ""}: ${BLANK}ve`), "Neurological examination": () => V.NEURO_PHRASES,
-    "Pain scale": () => ["0","1","2","3","4","5","6","7","8","9","10"],
+    "Vital signs": () => V.VITAL_SIGNS_LINES,
     "Problem list": () => [...V.IMPAIRMENTS, ...V.PARTICIPATION_RESTRICTION],
     "Drug allergy": () => ["No", "Yes"], "Recommendation": () => V.PLAN_GOALS,
     "Physician's recommendations": () => V.PLAN_GOALS,
@@ -718,8 +741,16 @@
     }
     const core = V.CORE_FIELDS[fmt], all = V.OUTPUT_FORMATS[fmt];
     all.filter((f) => core.includes(f)).forEach((f) => {
+      if (f === "Pain scale") { host.appendChild(painScaleBox()); return; }
       host.appendChild(fieldBox(f, /history|xamination/i.test(f) ? 5 : 3, "", true));
-      if (CHIPS_FOR[f]) { const [d, b] = details("Options for " + f); b.appendChild(chips(CHIPS_FOR[f](), f, "")); host.appendChild(d); }
+      if (f === "Active range of motions" || f === "Passive range of motions") {
+        const moves = V.ROM_BY_REGION[S.region] || V.ROM_GENERAL;
+        const [d, b] = details("Options for " + f);
+        b.appendChild(chips(moves, f, "", romLine));
+        b.appendChild(sub("In words instead")); b.appendChild(chips(V.ROM_QUALIFIERS, f, ""));
+        if (f === "Active range of motions" && V.ACCESSORY_BY_REGION[S.region]) { b.appendChild(sub("Accessory movement")); b.appendChild(chips(V.ACCESSORY_BY_REGION[S.region], f, "")); }
+        host.appendChild(d);
+      } else if (CHIPS_FOR[f]) { const [d, b] = details("Options for " + f); b.appendChild(chips(CHIPS_FOR[f](), f, "")); host.appendChild(d); }
       if (f === "Treatment" || f === "Treatments" || f === "Physiotherapy Treatments") treatmentExtras(host, f);
     });
     const optional = all.filter((f) => !core.includes(f));

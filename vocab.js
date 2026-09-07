@@ -1983,7 +1983,8 @@ window.VOCAB = {
   "Inflammation",
   "Limited ROM",
   "Muscle tightness",
-  "Muscle weakness"
+  "Muscle weakness",
+  "Others"
  ],
  "PARTICIPATION_RESTRICTION": [
   "No",
@@ -1997,6 +1998,13 @@ window.VOCAB = {
   "Fair",
   "Good",
   "Excellent"
+ ],
+ "VITAL_SIGNS_LINES": [
+  "Blood pressure: ___/___ mmHg",
+  "Pulse rate: ___ bpm",
+  "Respiratory rate: ___ /min",
+  "Temperature: ___ °C",
+  "O2 saturation: ___ %"
  ],
  "OUTPUT_FORMATS": {
   "SOAP with treatment": [
@@ -2012,6 +2020,7 @@ window.VOCAB = {
    "Pain scale",
    "Present history",
    "Past history",
+   "Vital signs",
    "Observation",
    "Palpation",
    "Active range of motions",
@@ -2022,7 +2031,8 @@ window.VOCAB = {
    "Special test",
    "Neurological examination",
    "Treatment",
-   "Problem list"
+   "Problem list",
+   "Functional limitation"
   ],
   "Physiotherapy Report": [
    "Chief Complaint",
@@ -2043,10 +2053,22 @@ window.VOCAB = {
   "New patient's record": [
    "Chief complaint",
    "Diagnosis",
+   "Pain scale",
    "Present history",
+   "Past history",
+   "Vital signs",
    "Observation",
    "Palpation",
-   "Treatment"
+   "Active range of motions",
+   "Passive range of motions",
+   "Muscle power",
+   "PAIVMS",
+   "Functional test",
+   "Special test",
+   "Neurological examination",
+   "Treatment",
+   "Problem list",
+   "Functional limitation"
   ],
   "Physiotherapy Report": [
    "Chief Complaint",
