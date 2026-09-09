@@ -95,6 +95,9 @@
   // Where each detected line goes, per form. sec -> [field, keepHeading]
   function target(sec, heading) {
     const f = S.format;
+    // "PastHistory" is a New patient's record-only routing hint (a real box there); every other
+    // format folds past history into its one subjective/complaint box, same as before.
+    if (heading === "PastHistory" && f !== "New patient's record") heading = "";
     if (f === "SOAP with treatment") {
       if (sec === "problem") return null;
       return [{ subjective: "Subjective", objective: "Objective", analysis: "Analysis", plan: "Plan", treatment: "Treatment", exercise: "Treatment" }[sec], heading];
@@ -107,6 +110,7 @@
           "Neurological examination": "Neurological examination", "Myotome": "Neurological examination", "PAIVMS": "PAIVMS" };
         return heading ? [map[heading] || "Observation", ""] : ["Pain scale", ""];
       }
+      if (sec === "subjective" && heading === "PastHistory") return ["Past history", ""];
       return { subjective: ["Chief complaint", ""], analysis: ["Diagnosis", ""], plan: null, treatment: ["Treatment", ""], exercise: ["Treatment", "Exercise"], problem: ["Problem list", ""] }[sec];
     }
     if (f === "Physiotherapy Report") {
@@ -897,9 +901,37 @@
     g.putImageData(img, 0, 0);
     return c;
   }
+  // Intake forms are mostly printed boilerplate a physio never wants pasted
+  // into the note: contact fields (name/tel/DOB/emergency contact/e-mail),
+  // "how did you hear about us", desired massage pressure. Keep only what's
+  // actually clinical: pain area, period of injury, chief complaint,
+  // underlying disease, past history — the questions themselves get
+  // stripped off, the handwritten answer after them is kept.
+  const OCR_DROP = /\bfirst name\b|\blast name\b|\bnickname\b|\btel\.?\)|\bdate of birth\b|\bemergency contact\b|\be-?mail\)|\bheight\b[^a-z]{0,6}cm|\bweight\b[^a-z]{0,6}kg|\binstagram\b|\bfacebook\b|\bwebsite\b|friend referred|desired massage|massage pressure|\bhard\b[^a-z]{0,20}\bmedium\b[^a-z]{0,20}\bsoft\b|treated for this condition before|how did you hear about us|date of assessment|new patient registration|patient registration form|ชื่อ.{0,3}first name|นามสกุล|ชื่อเล่น|โทร.{0,4}tel|วัน.เดือน.ปี.*เกิด|เบอร์ญาติ|อีเมล|ส่วนสูง|น้ำหนัก\s*\(|รู้จักเราได้อย่างไร|ผู้แนะนำ|น้ำหนักในการกด|เคยรับการรักษาอาการนี้/i;
+  const OCR_FIELD_LABELS = [
+    [/^.*?pain area\)?\s*[:.]?\s*/i, "Pain area: "],
+    [/^.*?บริเวณที่ปวด[^)]*\)?\s*/, "Pain area: "],
+    [/^.*?period of injury\)?\s*[:.]?\s*/i, "Period of injury: "],
+    [/^.*?ระยะเวลาที่ปวด[^)]*\)?\s*/, "Period of injury: "],
+    [/^.*?chief complaint or condition\)?\s*[:.]?\s*/i, "Chief complaint: "],
+    [/^.*?อาการสำคัญ[^)]*\)?\s*/, "Chief complaint: "],
+    [/^.*?underlying disease\)?\s*[:.]?\s*/i, "Underlying disease: "],
+    [/^.*?โรคประจำตัว[^)]*\)?\s*/, "Underlying disease: "],
+    [/^.*?past history including[^)]*\)?\s*/i, "Past history: "],
+    [/^.*?ประวัติการเจ็บป่วยในอดีต[^)]*\)?\s*/, "Past history: "],
+  ];
   function cleanOcr(text) {
-    return text.split("\n").map((l) => l.replace(/[_|]{2,}/g, " ").replace(/\s+/g, " ").trim())
-      .filter((l) => /[A-Za-z0-9฀-๿]{2,}/.test(l)).join("\n");
+    const lines = text.split("\n").map((l) => l.replace(/[_|]{2,}/g, " ").replace(/\s+/g, " ").trim())
+      .filter((l) => /[A-Za-z0-9฀-๿]{2,}/.test(l));
+    const out = [];
+    for (const line of lines) {
+      if (/^\d\.?\s*$/.test(line)) continue;
+      const hit = OCR_FIELD_LABELS.find(([re]) => re.test(line));
+      if (hit) { const rest = line.replace(hit[0], "").trim(); if (rest) out.push(hit[1] + rest); continue; }
+      if (OCR_DROP.test(line)) continue;
+      out.push(line);
+    }
+    return out.join("\n");
   }
   async function readPhotos(files) {
     const btn = $("photobtn"); btn.classList.add("busy");

@@ -107,7 +107,7 @@ window.DETECT = (function () {
   add("Throbbing", "throbbing", "throb", "ตุบ", "ตุ๊บ"); add("Stiffness", "stiff", "stiffness", "ฝืด", "ขยับยาก", "ข้อแข็ง");
   add("Numbness", "numb", "numbness", "ชา"); add("Shooting", "shooting", "แล่น", "ปวดแล่น");
   add("Tingling", "tingling", "tingle", "pins and needles", "เหน็บ", "ซ่า", "ยิบ"); add("Burning", "burning", "burn", "แสบ", "แสบร้อน");
-  add("Aching", "aching", "ache", "เมื่อย", "ปวดเมื่อย", "ระบม"); add("Clicking", "clicking", "click", "clicks", "เสียงคลิก", "เสียงดัง", "กึก");
+  add("Aching", "aching", "ache", "เมื่อย", "ปวดเมื่อย", "ระบม"); add("Clicking", "clicking", "click", "clicks", "cracking", "crack", "cracks", "popping", "pops", "เสียงคลิก", "เสียงดัง", "กึก");
   add("Locking", "locking", "locks", "locked", "ล็อค", "ล็อก"); add("Giving way", "giving way", "gives way", "gave way", "buckle", "buckling", "ทรุด", "เข่าทรุด", "เข่าอ่อน");
   const AGG_AL = {
     "Worse on walking": ["walking", "walk", "walks", "เดิน"], "Worse on stairs": ["stairs", "stair", "บันได", "ขึ้นลงบันได"],
@@ -674,6 +674,32 @@ window.DETECT = (function () {
     aggHits.forEach((h) => { push("subjective", "", h.term); out.heard.add(h.term); });
     pick(scan(Object.entries(EASE_AL), low)).filter((h) => !overlaps(h, modToday) && !overlaps(h, phraseHits) && cueNear(BETTER, h) && !/มากขึ้น|แย่ลง|\bworse\b/.test(justAfter(h))).forEach((h) => { push("subjective", "", h.term); out.heard.add(h.term); });
 
+    // Past history — "no underlying disease, no accident, no surgery" (or one actually named).
+    // "No underlying disease" is a normal, complete past history — it must land in the Past
+    // history box on its own, not get silently dropped because nothing else was said.
+    {
+      const PH_ITEMS = [
+        ["underlying disease", /\bunderlying disease(?:s)?\b|\bknown disease\b|\bchronic (?:illness|disease|condition)\b|โรคประจำตัว/gi],
+        ["accident", /\baccidents?\b|\btrauma\b|อุบัติเหตุ/gi],
+        ["surgery", /\bsurger(?:y|ies)\b|\boperations?\b|ผ่าตัด/gi],
+        ["regular medication", /\bregular medications?\b|\bmedications? (?:he|she|they|patient) (?:takes?|is on)\b|ยาที่กินประจำ|ยาประจำ/gi],
+      ];
+      const phSeen = new Set(); const neg = []; const pos = [];
+      PH_ITEMS.forEach(([label, re]) => {
+        let m; re.lastIndex = 0;
+        while ((m = re.exec(low))) {
+          if (phSeen.has(label)) break;
+          if (isQuestion(qLine(m.index)) || patientSaid(m.index)) { continue; }
+          if (negated(low, m.index)) { neg.push(label); phSeen.add(label); break; }
+          const tail = low.slice(m.index + m[0].length, m.index + m[0].length + 40).match(/^\s*(?:is|of|:|คือ)?\s*([a-zก-๙][^.,;\n]{2,38})/);
+          pos.push(tail ? `${label[0].toUpperCase()}${label.slice(1)}: ${tail[1].trim()}` : `${label[0].toUpperCase()}${label.slice(1)} present`);
+          phSeen.add(label); break;
+        }
+      });
+      if (neg.length) push("subjective", "PastHistory", "No " + neg.join(", no "));
+      pos.forEach((line) => push("subjective", "PastHistory", line));
+    }
+
     // VAS — only a value written as n/10
     const vm = VAS.exec(low); if (vm) { const n = vm[1] || vm[2] || vm[3]; if (n && +n <= 10) { out.vas = n; push("objective", "", `VAS ${n}/10`); } }
     if (!out.vas && !labelled) {
@@ -754,12 +780,31 @@ window.DETECT = (function () {
     const bases = [...new Set(moves.map((m) => m.replace(/ (Rt\.|Lt\.)$/, "")))];
     const moveEntries = bases.map((b) => { const tok = norm(b).replace(MOVE_PREFIX, ""); return [b, [...new Set([norm(b), ...(MOVE[tok] || [tok]), ...(LAY_MOVE[b] || [])])]]; });
     const moveHits = pick(scan(moveEntries, low)); const movesSeen = new Set();
+    // "flexion and extension full range of motion, no limited range of motion": the qualifier
+    // sits after the LAST movement in a short and/,-joined list, not after each one — stopping
+    // each movement's own context window at the very next movement hit left every movement but
+    // the last with no qualifier text at all (blank template instead of the finding actually said).
+    const moveStartsSorted = moveHits.map((m) => m.i).sort((a, b) => a - b);
+    function groupBoundary(i, len) {
+      let cursor = i + len;
+      for (const mi of moveStartsSorted) {
+        if (mi <= cursor) continue;
+        const gap = low.slice(cursor, mi);
+        if (gap.length <= 15 && /^[\s,\/]*(and|&)?[\s,\/]*$/i.test(gap)) {
+          const mh = moveHits.find((m) => m.i === mi);
+          cursor = mi + (mh ? mh.len : 0);
+          continue;
+        }
+        return mi;
+      }
+      return low.length;
+    }
     moveHits.forEach((h) => {
       const lineKey = h.term + "|" + sideNear(low, h.i, h.len, 10, false, 7) + "@" + low.lastIndexOf("\n", h.i); if (movesSeen.has(lineKey)) return; movesSeen.add(lineKey);
       const prefix = (h.term.split(" ")[0] || "").toLowerCase(); const preWord = (low.slice(Math.max(0, h.i - 16), h.i).match(/(hip|shoulder|knee|neck|cervical|trunk|lumbar|back|ankle|elbow|wrist|thoracic)\s*$/) || [])[1];
       if (preWord && prefix && preWord !== prefix && !(prefix === "trunk" && /lumbar|back/.test(preWord)) && !(prefix === "neck" && preWord === "cervical")) return;
       const wide = ctx(low, h.i, h.len, 60);
-      const nextM = moveHits.filter((m) => m.i > h.i).map((m) => m.i).sort((a, b) => a - b)[0];
+      const nextM = groupBoundary(h.i, h.len);
       const segEnd = Math.min(nextM === undefined ? low.length : nextM, h.i + h.len + 60, (low.indexOf("\n", h.i) < 0 ? low.length : low.indexOf("\n", h.i)));
       const seg = low.slice(h.i + h.len, segEnd);
       const layMove = LAY_MOVE_SET.has(low.substr(h.i, h.len));
@@ -789,9 +834,16 @@ window.DETECT = (function () {
         const follow = nextLines(h.i, 3).filter((l) => !isPatientLine(l))[0] || "";
         const followHead = follow.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");   // before the next instruction
         const dm = /(?<!arc[^.]{0,30})\b(\d{2,3})\s*(?:degrees?|°|องศา)/.exec(followHead);
-        const lim = /\b(limited|half ?way|three quarters|a quarter|restricted|can't (?:turn|go|get) far|not far)\b|ได้ครึ่ง|จำกัด/.test(followHead) || /\b(can't (?:turn|go|get) (?:far|very far|any further|further)|not far|only (?:half|a little)|as far as i (?:get|go|can)|that's about as far|to (?:about )?my (?:knees|shins)|half ?way down|halfway)\b/.test(reply);
+        const followHeadNoDeny = followHead.replace(/\b(no|not|without|isn'?t|wasn'?t)\s+(?:any\s+)?(limit(?:ed|ation)?s?|restrict(?:ed|ion)?s?)\b/gi, "").replace(/ไม่\s*(จำกัด|ติด)/g, "");
+        const lim = /\b(limited|restricted)\b|จำกัด/.test(followHeadNoDeny) || /\b(half ?way|three quarters|a quarter|can't (?:turn|go|get) far|not far)\b|ได้ครึ่ง/.test(followHead) || /\b(can't (?:turn|go|get) (?:far|very far|any further|further)|not far|only (?:half|a little)|as far as i (?:get|go|can)|that's about as far|to (?:about )?my (?:knees|shins)|half ?way down|halfway)\b/.test(reply);
         const rPain = /\b(pain|painful|ache|hurts?|ouch|ow|catch|catches|pinch|pinches|sharp)\b|ปวด|เจ็บ/.test(reply.replace(/(\bno|\bwithout|\bnot)\s*(pain\w*)/g, "")), rTight = /tight|ตึง|stiff|ฝืด|pulls?\b/.test(reply);
         if (dm || lim) { push("objective", heading, `${nmL}: ${dm ? dm[1] + "°" : "limited"}${rPain ? " with pain" : rTight ? " with tightness" : ""}`); return; }
+        // "full range of motion, no limited range of motion" said outright — this is a genuine,
+        // complete finding on its own; it must not fall through and leave the box's own unfilled
+        // default text (which reads "Limited ..." until a real chip/line replaces it) looking like
+        // an actual finding.
+        const full = /\b(full|all the way|no problem|fine|okay|ok|good|normal)\b|เต็มที่|ได้สุด|ปกติ|เต็มที|เต็ม/.test(reply) || /\b(full|normal)\b|เต็ม|ปกติ/.test(followHead);
+        if (full) { push("objective", heading, `${nmL}: full ROM${rPain ? " with pain at end range" : rTight ? " with tightness at end range" : ""}`); return; }
       }
       if (layMove && c && !/limit|full|เต็ม|จำกัด|ไม่สุด|ได้ไม่|normal|wnl/.test(c)) {
         const sdL = sd; const nmL = nm;
@@ -802,8 +854,13 @@ window.DETECT = (function () {
         if (LAY.NEGATIVE.test(c)) { push("objective", heading, `${nmL}: full ROM without pain`); return; }
       }
       const cP = c.replace(/(ไม่|\bno|\bwithout|\bnot)\s*(?:มี)?\s*(?:\w+\s+){0,2}(ปวด|เจ็บ|pain\w*|hurt\w*)/g, "");
-      if (LIMITED.test(c)) line = `${nm}: limited` + (TIGHT.test(c) && !PAIN_ONLY.test(cP) ? " by tightness" : PAIN_ONLY.test(cP) ? " by pain" : TIGHT.test(c) ? " by tightness" : "");
-      else if (FULL.test(c)) line = `${nm}: full ROM` + (NOPAIN.test(c) && !PAIN_ONLY.test(cP) ? " without pain" : PAIN_ONLY.test(cP) ? " with pain at end range" : TIGHT.test(c) ? " with tightness at end range" : "");
+      // "no limited range of motion" / "not limited" / "ไม่จำกัด": LIMITED matches the bare word
+      // "limited" with no regard for a "no"/"not" right in front of it — that reads a denial of
+      // limitation as the finding itself. Strip those denials before testing for LIMITED so a
+      // negated "limited" falls through to the FULL check instead.
+      const cNoDeny = c.replace(/\b(no|not|without|isn'?t|wasn'?t|aren'?t|denies?)\s+(?:any\s+)?(limit(?:ed|ation)?s?|restrict(?:ed|ion)?s?)\b/gi, "").replace(/ไม่\s*(จำกัด|ติด)/g, "");
+      if (LIMITED.test(cNoDeny)) line = `${nm}: limited` + (TIGHT.test(c) && !PAIN_ONLY.test(cP) ? " by tightness" : PAIN_ONLY.test(cP) ? " by pain" : TIGHT.test(c) ? " by tightness" : "");
+      else if (FULL.test(c) || LIMITED.test(c)) line = `${nm}: full ROM` + (NOPAIN.test(c) && !PAIN_ONLY.test(cP) ? " without pain" : PAIN_ONLY.test(cP) ? " with pain at end range" : TIGHT.test(c) ? " with tightness at end range" : "");
       else line = romLine(nm);
       push("objective", heading, line);
     });
@@ -840,6 +897,7 @@ window.DETECT = (function () {
     const testHitsEarly = pick(scan(entries(V.SPECIAL_TESTS), low));
     const fx = pick(scan([...entries(funcTerms), ...entries(ALL_EX)], low)).filter((h) => !overlaps(h, aggHits) && !overlaps(h, obs) && !overlaps(h, testHitsEarly) && !patientSaid(h.i));
     const exHits = [];
+    const exPending = []; // {h, dose} — pushed after the shared-dose backfill pass below
     fx.forEach((h) => {
       const c = ctx(low, h.i, h.len, 60), cl = clause(low, h.i, h.len);
       const isEx = EXCTX.test(c) || DOSE1.test(sentenceOf(h.i)) || DOSE3.test(sentenceOf(h.i)) || /\b\d+\s*times\b/.test(sentenceOf(h.i)), isTest = TESTCTX.test(c) && !DOSE1.test(sentenceOf(h.i));
@@ -855,10 +913,24 @@ window.DETECT = (function () {
         const nextX = fx.filter((o) => o.i > h.i).map((o) => o.i).sort((a, b) => a - b)[0];
         const after = low.slice(h.i + h.len, Math.min(nextX === undefined ? low.length : nextX, h.i + h.len + 130, (low.indexOf("\n", h.i) < 0 ? low.length : low.indexOf("\n", h.i))));
         const d = dose(after);
-        push("exercise", "Exercise", exLine(h.term, d));
+        exPending.push({ h, term: h.term, dose: d });
       }
       else if (inF && !overlaps(h, moveHits)) push("objective", "Functional test", h.term + (/\b(pain|painful)\b|ปวด|เจ็บ/.test(low.slice(h.i + h.len, h.i + h.len + 30)) ? " with pain" : ""));
     });
+    // "single leg knee extension, wall sit, and fire hydrant — every exercise, 10 reps 3 sets":
+    // the dose only lands right after the LAST exercise named, so earlier exercises in the same
+    // sentence/list get nothing from their own "after" slice. Back-fill blank doses from the next
+    // dose found later in the same sentence, once — this is the one dose the physio actually said
+    // for the whole list, not a guess.
+    exPending.forEach((p, idx) => {
+      if (p.dose !== BLANK) return;
+      const sent = sentenceOf(p.h.i);
+      for (let j = idx + 1; j < exPending.length; j++) {
+        if (sentenceOf(exPending[j].h.i) !== sent) break;
+        if (exPending[j].dose !== BLANK) { p.dose = exPending[j].dose; break; }
+      }
+    });
+    exPending.forEach((p) => push("exercise", "Exercise", exLine(p.term, p.dose)));
 
     // Special tests
     const testHits = pick(scan(entries(V.SPECIAL_TESTS), low));
@@ -1070,7 +1142,10 @@ window.DETECT = (function () {
     {
       const L = out.lines;
       const has = (fn) => L.some(fn);
-      if (has((l) => /range of motions$/.test(l.heading) && /limited|at end range|by tightness|by pain|°/.test(l.line))) push("problem", "", "Limited ROM");
+      // was matching bare "°" and "at end range" too, so a fully-normal "full ROM ... with pain at
+      // end range" line (or any line that simply carries a degree number) wrongly added "Limited
+      // ROM" to the problem list even when the physio explicitly found full range of motion.
+      if (has((l) => /range of motions$/.test(l.heading) && /\blimited\b|\brestricted\b/.test(l.line))) push("problem", "", "Limited ROM");
       if (has((l) => l.heading === "Palpation" && /^(Tightness|Trigger point|Muscle spasm)/.test(l.line)) || has((l) => l.sec === "analysis" && /tightness|tight|myofascial|mps/i.test(l.line))) push("problem", "", "Muscle tightness");
       if (has((l) => l.heading === "Muscle power" && /weak|grade [0-4]/i.test(l.line))) push("problem", "", "Muscle weakness");
       if (has((l) => l.heading === "Observation" && /swelling|increased skin temperature|redness|bruising/i.test(l.line) && !/^no /i.test(l.line))) push("problem", "", "Inflammation");
