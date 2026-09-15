@@ -516,7 +516,7 @@ window.DETECT = (function () {
   const gated = (low, h, R) => { const g = LAY_GATE[low.substr(h.i, h.len)]; return !(g && !g.includes(R)); };
 
   // ---------- line builders ----------
-  const romLine = (m) => `${m}; Rt. ${BLANK}°/${BLANK}°/${BLANK}° Lt. ${BLANK}°/${BLANK}°/${BLANK}°`;
+  const romLine = (m) => `${m}:`;   // a movement named with no value: the label only, never a ___ blank (owner, 2026-09-16)
   const palpLine = (f, m, s) => `${f} at ${s ? s + " " : ""}${m} m.`;
   const exLine = (e, d) => `${e} — ${d || BLANK}`;
 
@@ -876,7 +876,14 @@ window.DETECT = (function () {
       // limitation as the finding itself. Strip those denials before testing for LIMITED so a
       // negated "limited" falls through to the FULL check instead.
       const cNoDeny = c.replace(/\b(no|not|without|isn'?t|wasn'?t|aren'?t|denies?)\s+(?:any\s+)?(limit(?:ed|ation)?s?|restrict(?:ed|ion)?s?)\b/gi, "").replace(/ไม่\s*(จำกัด|ติด)/g, "");
-      if (LIMITED.test(cNoDeny)) line = `${nm}: limited` + (TIGHT.test(c) && !PAIN_ONLY.test(cP) ? " by tightness" : PAIN_ONLY.test(cP) ? " by pain" : TIGHT.test(c) ? " by tightness" : "");
+      // "knee flexion 120 degrees on the left": a degree said right after the movement is the
+      // finding, copied verbatim (the reply-based path above only covered cued examinations)
+      const dg = /(\d{1,3})\s*(?:°|degrees?|\bdeg\b|องศา)/.exec(seg);
+      if (dg && !/\b(vas|score|out of 10)\b|\/10/.test(seg)) {
+        push("objective", heading, `${nm}: ${dg[1]}°` + (PAIN_ONLY.test(cP || seg.replace(/(ไม่|\bno|\bwithout|\bnot)\s*(?:มี)?\s*(?:\w+\s+){0,2}(ปวด|เจ็บ|pain\w*|hurt\w*)/g, "")) ? " with pain" : TIGHT.test(seg) ? " with tightness" : ""));
+        return;
+      }
+      if (LIMITED.test(cNoDeny)) line = `${nm}: limited` +(TIGHT.test(c) && !PAIN_ONLY.test(cP) ? " by tightness" : PAIN_ONLY.test(cP) ? " by pain" : TIGHT.test(c) ? " by tightness" : "");
       else if (FULL.test(c) || LIMITED.test(c)) line = `${nm}: full ROM` + (NOPAIN.test(c) && !PAIN_ONLY.test(cP) ? " without pain" : PAIN_ONLY.test(cP) ? " with pain at end range" : TIGHT.test(c) ? " with tightness at end range" : "");
       else line = romLine(nm);
       push("objective", heading, line);

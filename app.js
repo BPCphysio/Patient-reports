@@ -2,7 +2,8 @@
    Nothing here is sent anywhere. The note lives in memory until it is copied
    into Jane, and disappears when the tab closes.
 
-   Numbers are never filled in automatically. Every measurement lands as ___. */
+   Numbers are never invented: a measurement is written only when it was said or typed;
+   otherwise the line stops at its label ("Knee flexion:") for the physio to complete. */
 
 (function () {
   const V = window.VOCAB;
@@ -41,13 +42,46 @@
   }
 
   // ---------- line builders (clinic notation) ----------
-  const romLine = (m) => `${m}; Rt. ${BLANK}°/${BLANK}°/${BLANK}° Lt. ${BLANK}°/${BLANK}°/${BLANK}°`;
-  const circLine = () => `Circumference ${BLANK}; Rt. ${BLANK} cm, Lt. ${BLANK} cm`;
-  const forceLine = (m) => `${m}; Max force Rt. ${BLANK} N, Lt. ${BLANK} N`;
-  const vasLine = () => `VAS ${BLANK}/10`;
-  const testLine = (n) => `${n}: ${BLANK}ve`;
+  // Owner decision 2026-09-16: no line in a box ever carries a ___ blank. Everything up to
+  // the first blank is kept ("Knee flexion: ___° Rt. / ___° Lt." -> "Knee flexion:",
+  // "Wall sit — ___" -> "Wall sit"); the physio writes the value after it, or says it and
+  // detect.js writes it. Applied to every tapped chip, every pack line and every detected line.
+  function noBlanks(line) {
+    const s = String(line || ""); if (!s.includes(BLANK)) return s;
+    // comma-separated parts that still hold a blank are dropped ("1 MHz, ___ w/cm2, 8 mins" ->
+    // "1 MHz, 8 mins"); the first part is cut at its blank so the label survives
+    const parts = s.split(/,\s*/);
+    const out = [];
+    parts.forEach((p, i) => {
+      if (!p.includes(BLANK)) { out.push(p); return; }
+      if (i === 0) { const h = p.slice(0, p.indexOf(BLANK)).replace(/[\s,;\/(\-—–=]+$/, ""); if (h) out.push(h); }
+    });
+    let t = out.join(", ").replace(/[\s,;\/(\-—–=<>]+$/, "");
+    // "Trigger point at ___" -> "Trigger point:", "Anterior view: head tilt to ___ side" ->
+    // "Anterior view: head tilt": a word left dangling by the cut goes too
+    let dangled = false;
+    for (;;) { const m = /\s+(?:at|to|of|with|by|and|in|on|for|or|the|a|an|upper|middle|lower|from|per|than)$/i.exec(t); if (!m) break; t = t.slice(0, m.index); dangled = true; }
+    t = t.replace(/[\s,;\/(\-—–=<>]+$/, "");
+    if (dangled && t && !t.includes(":")) t += ":";
+    return t;
+  }
+  // A chart-derived template that is only a stub once its numbers are gone ("LSI >", "Gr",
+  // "Extension; feel tightness at") is not something to offer; a label ("Q angle:") or a real
+  // phrase is.
+  function usableStub(t) {
+    if (!t || t.length < 6) return false;
+    if (/\(\s*\)/.test(t)) return false;
+    if (/\b(at|to|of|with|by|and|in|on|for|or|the|a)$/i.test(t)) return false;
+    if (!/:/.test(t) && t.trim().split(/\s+/).length < 3) return false;
+    return true;
+  }
+  const romLine = (m) => `${m}:`;
+  const circLine = () => `Circumference:`;
+  const forceLine = (m) => `${m}; Max force:`;
+  const vasLine = () => `VAS:`;
+  const testLine = (n) => `${n}:`;
   const palpLine = (f, m, s) => `${f} at ${s ? s + " " : ""}${m} m.`;
-  const exLine = (e, d) => `${e} — ${d || BLANK}`;
+  const exLine = (e, d) => (d ? `${e} — ${d}` : e);
 
   // ---------- append / remove ----------
   const HEADINGS = new Set(["Observation", "Palpation", "Active range of motions", "Passive range of motions",
@@ -152,6 +186,7 @@
       if (l.sec === "analysis" && S.condition && line.replace(/^(Rt\.|Lt\.|Both) /, "").toLowerCase() === S.condition.toLowerCase()) return;
       if (S.format === "New patient's record" && t[0] === "Pain scale") line = res.vas || line;
       if (l.sec === "treatment" && !t[1]) line = fillTreatmentBlanks(line, res);
+      line = noBlanks(line); if (!line) return;
       (wanted[t[0]] = wanted[t[0]] || []).push({ heading: t[1] || "", line });
     });
     const key = (x) => x.heading + "" + x.line;
@@ -161,7 +196,7 @@
       const nextKeys = new Set(next.map(key)), prevKeys = new Set(prev.map(key));
       prev.filter((p) => !nextKeys.has(key(p))).forEach((p) => removeLine(field, p.line));
       next.filter((w) => !prevKeys.has(key(w))).forEach((w) => {
-        if (/(\+ve|-ve|___ve)\s*$/.test(w.line)) removeBlankTest(field, w.line); // a read result replaces the prefilled blank
+        if (/(\+ve|-ve)\s*$/.test(w.line)) removeBlankTest(field, w.line); // a read result replaces the pre-listed "Name:" line
         if (!hasLine(field, w.line)) append(field, w.line, w.heading, true);
       });
       S.auto[field] = next; count += next.length;
@@ -256,12 +291,12 @@
     const { ordered, heard } = orderByTranscript(terms);
     ordered.forEach((t) => {
       const b = document.createElement("button"); b.type = "button";
-      const line = transform ? transform(t) : t;
+      const line = noBlanks(transform ? transform(t) : t);
       b.className = "chip" + (heard.has(t) ? " heard" : ""); b.textContent = t; b.dataset.field = field; b.dataset.line = line;
       if (heard.has(t)) b.title = "Heard in the transcript";
       if (lineInField(field, line)) b.classList.add("on");
       b.onclick = () => {
-        const current = transform ? transform(t) : t; b.dataset.line = current;
+        const current = noBlanks(transform ? transform(t) : t); b.dataset.line = current;
         const inBox = lineInField(field, current);
         if (inBox) removeLine(field, inBox); else append(field, current, heading);
         renderOutput(); syncChips();
@@ -387,7 +422,7 @@
   // The usual special tests for this region appear in Objective with the result blank.
   // The physio deletes the ones not done and marks the rest + or -. A result read from
   // the notes replaces the blank line for that test (see autoFill).
-  const testName = (line) => line.replace(/\s*(Rt\.|Lt\.|Both)?\s*:\s*(\+ve|-ve|___ve)\s*$/, "").trim();
+  const testName = (line) => line.replace(/\s*(Rt\.|Lt\.|Both)?\s*:\s*(\+ve|-ve|___ve)?\s*$/, "").trim();
   // scoliosis, ACL, frozen shoulder…: the lines a BPC new-patient record carries for them.
   // Two sources, merged: the hand-written routine (V.CONDITION_PACKS) for conditions whose
   // charts are mostly prose, and the measurement templates read straight from this
@@ -402,43 +437,58 @@
     LEVEL_REGION.forEach(([re, r]) => { if (re.test(line.replace(SIDE_TOKEN, " "))) regs.add(r); });
     return !regs.size || regs.has(S.region);
   }
-  const packSide = (line) => (line.includes(SIDE_TOKEN) ? withSide(S.side ? line : line.split(SIDE_TOKEN).join("___")) : line);
+  const packSide = (line) => noBlanks(withSide(line));
   function applyPack() {
-    // Owner decision 2026-09-15: a condition's measurement lines are offered as tap-to-add chips
-    // under each box, never written into the box as "___" blanks. Region-aware, and recomputed
-    // whenever the condition, region or side changes.
-    const wanted = {};
+    // A condition's usual lines (what is normally observed, palpated, measured, tested) go into
+    // the boxes so the physio sees the routine — but never with a ___ blank (owner, 2026-09-16:
+    // "Knee flexion:" and the physio fills it in, or says it). Region-aware, re-applied whenever
+    // the condition, region or side changes; lines it added before that no longer belong are
+    // taken back out (only while still untouched). The same lines are also offered as chips.
+    const prev = S.packLines || {};
+    const wanted = {};   // everything the condition normally brings, into the boxes (owner, 2026-09-16:
+                         // "whenever I put in a condition, everything would come up" — the hand-written
+                         // routine AND the lines read from this condition's own charts, minus blanks)
+    const chips = {};
     // vetted = the export (or the hand-written pack) already filed these lines under this exact
     // region; the guard is for the region-free lines only ("above knee level" is a lumbar
     // fingertip measure, and the body-word guard would misread it as a knee line)
-    const add = (heading, lines, vetted) => {
+    const add = (heading, lines, vetted, fromCharts) => {
       const sec = heading === "Exercise" ? "exercise" : "objective";
       const t = target(sec, heading); if (!t || !t[0]) return;
       lines.forEach((raw) => {
-        const line = packSide(raw);
-        if (!vetted && !packLineFitsRegion(line)) return;
+        const line = packSide(raw); if (!line) return;
+        if (fromCharts && !usableStub(line)) return;   // "LSI >", "Gr": nothing left once the numbers are gone
+        if (!vetted && !packLineFitsRegion(withSide(raw))) return;
+        if ((wanted[t[0]] || []).some((w) => w.line.toLowerCase() === line.toLowerCase())) return;
         (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" });
       });
     };
     if (S.condition) {
       const handKey = V.CONDITION_PACKS ? Object.keys(V.CONDITION_PACKS).find((re) => new RegExp(re, "i").test(S.condition)) : null;
       const hit = SG ? findCondition(currentCondition()) : null;
-      if (hit && hit[1].p) Object.entries(hit[1].p).forEach(([h, lines]) => add(h, lines, false));
-      if (hit && hit[1].pr && hit[1].pr[S.region]) Object.entries(hit[1].pr[S.region]).forEach(([h, lines]) => add(h, lines, true));
       if (handKey) Object.entries(V.CONDITION_PACKS[handKey]).forEach(([k, v]) => {
-        if (k.startsWith("@")) { if (k.slice(1) === S.region) Object.entries(v).forEach(([h, lines]) => add(h, lines, true)); }
-        else add(k, v, false);
+        // hand-written packs are curated for their condition (scoliosis reads the whole body:
+        // head tilt, shoulder level, heels): never region-filtered
+        if (k.startsWith("@")) { if (k.slice(1) === S.region) Object.entries(v).forEach(([h, lines]) => add(h, lines, true, false)); }
+        else add(k, v, true, false);
       });
+      if (hit && hit[1].p) Object.entries(hit[1].p).forEach(([h, lines]) => add(h, lines, false, true));
+      if (hit && hit[1].pr && hit[1].pr[S.region]) Object.entries(hit[1].pr[S.region]).forEach(([h, lines]) => add(h, lines, true, true));
     }
-    S.packChips = wanted;
-    renderSuggest();
+    const key = (x) => x.heading + "" + x.line;
+    new Set([...Object.keys(prev), ...Object.keys(wanted)]).forEach((field) => {
+      const before = prev[field] || [], next = wanted[field] || [];
+      const nextKeys = new Set(next.map(key)), beforeKeys = new Set(before.map(key));
+      before.filter((p) => !nextKeys.has(key(p))).forEach((p) => removeLine(field, p.line));
+      // exact match only: "Anterior view: head tilt" and "Anterior view: ASIS level" share a label
+      next.filter((w) => !beforeKeys.has(key(w))).forEach((w) => { if (!hasLine(field, w.line)) append(field, w.line, w.heading, true); });
+    });
+    S.packLines = wanted; S.packChips = chips;
+    renderOutput(); renderSuggest();
   }
+  // The region's usual special tests are pre-listed as "Name:" (no blank) so the physio sees
+  // what is normally checked; a result said in the notes fills the line, an unused one is deleted.
   function prefillTests() {
-    // Owner decision 2026-09-15 (after physios used it): no "Name: ___ve" blanks pre-listed in
-    // the box. A test appears only when it was actually said (detect.js, with its result) or
-    // tapped from the list below the box. "If ten tests exist and we say five, only five show."
-    return;
-    // eslint-disable-next-line no-unreachable
     const P = V.REGION_PROFILE[S.region]; if (!P || S.region === "General / other") return;
     const t = target("objective", "Special test"); if (!t || !t[0]) return;
     const field = t[0], heading = t[1] || "";
@@ -448,18 +498,19 @@
     const fix = (n) => (S.region === "Ankle & foot" && n === "Anterior drawer (knee)" ? "Anterior drawer (ankle)" : n);
     const condTests = hit && hit[1].t ? hit[1].t.map(fix).filter((n) => known.has(n) && P.tests.includes(n)) : [];
     const testList = [...condTests, ...P.tests.filter((n) => !condTests.includes(n))];
-    const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /(\+ve|-ve|___ve)\s*$/.test(l)).map(testName));
+    const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /(\+ve|-ve|:)\s*$/.test(l)).map(testName));
     S.prefilled = S.prefilled || new Set();
-    testList.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}: ${BLANK}ve`, heading, true); S.prefilled.add(name); });
+    testList.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}:`, heading, true); S.prefilled.add(name); });
     renderOutput();
   }
+  const BLANK_TEST = /:\s*(?:___ve)?\s*$/;   // a pre-listed test with no result yet
   function removeBlankTest(field, line) {
     const name = testName(line);
-    val(field).split("\n").forEach((l) => { if (testName(l.trim()) === name && /___ve\s*$/.test(l) && l.trim() !== line.trim()) removeLine(field, l.trim()); });
+    val(field).split("\n").forEach((l) => { if (testName(l.trim()) === name && BLANK_TEST.test(l) && l.trim() !== line.trim()) removeLine(field, l.trim()); });
   }
   function clearPrefilledTests() {
     if (!S.prefilled) return;
-    V.OUTPUT_FORMATS[S.format].forEach((field) => val(field).split("\n").forEach((l) => { if (/___ve\s*$/.test(l) && S.prefilled.has(testName(l.trim()))) removeLine(field, l.trim()); }));
+    V.OUTPUT_FORMATS[S.format].forEach((field) => val(field).split("\n").forEach((l) => { if (BLANK_TEST.test(l) && S.prefilled.has(testName(l.trim()))) removeLine(field, l.trim()); }));
     S.prefilled = new Set();
   }
   const MIDLINE = new Set(["Neck / cervical", "Thoracic spine", "Trunk / lumbar", "General / other"]);
@@ -484,10 +535,10 @@
     const t = target("objective", "Special test");
     if (t && t[0] && S.prefilled && S.prefilled.size) {
       const lines = val(t[0]).split("\n"); let changed = false;
-      const next = lines.map((l) => { const tl = l.trim(); if (!/___ve\s*$/.test(tl) || !S.prefilled.has(testName(tl))) return l; const nl = `${testName(tl)}${s && s !== "Both" ? " " + s : ""}: ${BLANK}ve`; if (nl !== tl) changed = true; return l.replace(tl, nl); });
+      const next = lines.map((l) => { const tl = l.trim(); if (!BLANK_TEST.test(tl) || !S.prefilled.has(testName(tl))) return l; const nl = `${testName(tl)}${s && s !== "Both" ? " " + s : ""}:`; if (nl !== tl) changed = true; return l.replace(tl, nl); });
       if (changed) { S.fields[t[0]] = next.join("\n"); updateTa(t[0]); renderOutput(); }
     }
-    if (S.packChips) applyPack();   // pack chips carry the side too
+    if (S.packLines) applyPack();   // pack lines carry the side too
     if (!quiet) renderSuggest();
   }
 
@@ -500,7 +551,7 @@
   function withSide(line) {
     if (!line.includes(SIDE_TOKEN)) return line;
     let s = S.side ? line.split(SIDE_TOKEN).join(S.side) : line.split(SIDE_TOKEN).join("");
-    return s.replace(/\s+/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/\(\s+/g, "(").trim();
+    return s.replace(/\(\s*\)/g, "").replace(/\s+/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/\(\s+/g, "(").trim();
   }
   // Lines that already exist as standard options below the box are not repeated as suggestions.
   // a line about another part of the body has no place in this note (a neck case does not get the hamstrings)
@@ -552,7 +603,7 @@
       const packed = ((S.packChips || {})[field] || []).map((x) => ({ t: x.line, heading: x.heading }));
       let lines = [];
       if (hit) { const labels = EQUIV[field] || [field]; for (const l of labels) { if (hit[1].s[l] && hit[1].s[l].length) { lines = hit[1].s[l]; break; } } }
-      const cands = [...packed, ...lines.map(([line]) => ({ t: withSide(line), heading: "" }))];
+      const cands = [...packed, ...lines.map(([line]) => ({ t: noBlanks(withSide(line)), heading: "" }))].filter((c) => usableStub(c.t));
       if (!cands.length) return;
       const seen = new Set();
       const shown = cands.filter(({ t }) => {
@@ -626,14 +677,14 @@
     host.appendChild(d);
 
     [d, b] = details(P.neuro ? "Special tests & neurological" : "Special tests", true);
-    const testChips = chips(P.tests, field, "Special test", (n) => `${n}${S.side && S.side !== "Both" ? " " + S.side : ""}: ${BLANK}ve`);
+    const testChips = chips(P.tests, field, "Special test", (n) => `${n}${S.side && S.side !== "Both" ? " " + S.side : ""}:`);
     b.appendChild(testChips);
     if (P.neuro) { b.appendChild(chips(V.NEURO_PHRASES, field, "Neurological examination")); b.appendChild(chips(V.MYOTOMES, field, "Myotome")); }
     showAllLink(b);
     host.appendChild(d);
 
     [d, b] = details("Pain score");
-    const vas = document.createElement("button"); vas.type = "button"; vas.className = "chip"; vas.textContent = "+ VAS ___/10";
+    const vas = document.createElement("button"); vas.type = "button"; vas.className = "chip"; vas.textContent = "+ VAS /10";
     vas.onclick = () => append(field, vasLine(), ""); b.appendChild(vas); host.appendChild(d);
   }
 
@@ -748,7 +799,7 @@
   const CHIPS_FOR = {
     "Observation": () => profile().observation, "Palpation": () => V.PALPATION_FINDINGS,
     "Muscle power": () => V.STRENGTH, "PAIVMS": () => V.PAIVMS, "Functional test": () => profile().functional,
-    "Special test": () => profile().tests.map((n) => `${n}${S.side && S.side !== "Both" ? " " + S.side : ""}: ${BLANK}ve`), "Neurological examination": () => V.NEURO_PHRASES,
+    "Special test": () => profile().tests.map((n) => `${n}${S.side && S.side !== "Both" ? " " + S.side : ""}:`), "Neurological examination": () => V.NEURO_PHRASES,
     "Vital signs": () => V.VITAL_SIGNS_LINES,
     "Problem list": () => [...V.IMPAIRMENTS, ...V.PARTICIPATION_RESTRICTION],
     "Drug allergy": () => ["No", "Yes"], "Recommendation": () => V.PLAN_GOALS,
@@ -1165,7 +1216,7 @@
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
   $("copy").onclick = copyNote;
-  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.packChips = {}; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.packChips = {}; S.packLines = {}; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();
