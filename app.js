@@ -97,7 +97,7 @@
     const f = S.format;
     // "PastHistory" is a New patient's record-only routing hint (a real box there); every other
     // format folds past history into its one subjective/complaint box, same as before.
-    if (heading === "PastHistory" && f !== "New patient's record") heading = "";
+    if (/^(Past|Present)History$/.test(heading) && f !== "New patient's record") heading = "";
     if (f === "SOAP with treatment") {
       if (sec === "problem") return null;
       return [{ subjective: "Subjective", objective: "Objective", analysis: "Analysis", plan: "Plan", treatment: "Treatment", exercise: "Treatment" }[sec], heading];
@@ -111,6 +111,7 @@
         return heading ? [map[heading] || "Observation", ""] : ["Pain scale", ""];
       }
       if (sec === "subjective" && heading === "PastHistory") return ["Past history", ""];
+      if (sec === "subjective" && heading === "PresentHistory") return ["Present history", ""];
       return { subjective: ["Chief complaint", ""], analysis: ["Diagnosis", ""], plan: null, treatment: ["Treatment", ""], exercise: ["Treatment", "Exercise"], problem: ["Problem list", ""] }[sec];
     }
     if (f === "Physiotherapy Report") {
@@ -126,7 +127,7 @@
     if (res.side && !S.sideManual && res.side !== S.side) { setSide(res.side, true); renderCondTag(); }
     S.sideAuto = !!res.side;   // a side heard in the notes ("my left leg") survives a spine condition
     // the region the notes are about changes what counts as a movement, a test or an exercise: read them again with it
-    if (res.region && !S.regionManual && res.region !== S.region) { S.region = res.region; $("region").value = res.region; renderBuilder(); prefillTests(); res = DETECT.run(text, S.region); }
+    if (res.region && !S.regionManual && res.region !== S.region) { S.region = res.region; $("region").value = res.region; renderBuilder(); prefillTests(); applyPack(); res = DETECT.run(text, S.region); }
     if (res.tt && !$("tt").value.trim()) $("tt").value = res.tt;
     // adopt the first diagnosis heard as the condition before placing lines, so it is not added twice
     // the condition is the first specific diagnosis heard; a generic one (muscle imbalance, poor posture)
@@ -335,8 +336,10 @@
     [/\bhip\b|gluteal|glute|trochanter|femoroacetabular|\bfai\b|hamstring|groin|adductor|quadriceps strain|thigh/i, "Hip"],
     [/elbow|epicondyl|tennis|golfer|wrist|carpal|de quervain|trigger finger|hand|finger|thumb|tfcc|forearm|cubital/i, "Elbow, wrist & hand"],
     [/scoliosis|kyphosis|thoracic|rib|costo/i, "Thoracic spine"],
-    [/office syndrome|upper cross|myofascial|mps|text neck|headache|torticollis|whiplash|cervical|neck/i, "Neck / cervical"],
-    [/lower cross|low back|lumbar|disc|hnp|sciatic|spondyl|stenosis|sij|sacroiliac|coccy|pelvic|piriformis/i, "Trunk / lumbar"],
+    // "myofascial" / "mps" alone say nothing about where: the clinic files MPS for neck, low-back, hip
+    // and knee patients alike, so a bare MPS stays "General / other" until a place is named or heard
+    [/office syndrome|upper cross|text neck|headache|torticollis|whiplash|cervical|neck|trapezius|levator|scalene|suboccipital|sternocleidomastoid/i, "Neck / cervical"],
+    [/lower cross|low back|lumbar|disc|hnp|sciatic|spondyl|stenosis|sij|sacroiliac|coccy|pelvic|piriformis|quadratus lumborum|\bql\b|erector|multifidus/i, "Trunk / lumbar"],
     [/postur/i, "Thoracic spine"],
   ];
   function regionForCondition(name) {
@@ -390,25 +393,52 @@
   // charts are mostly prose, and the measurement templates read straight from this
   // condition's own charts (suggest.js "p" — numbers blanked, only lines repeated
   // across 3+ charts). Both can fire together; lines already in the box are skipped.
+  // Vertebral levels ("L___-L___", "C5-C6") are the one region clue DETECT.regionsOf cannot
+  // see (it reads body words and muscle names), so the guard below checks them too.
+  const LEVEL_REGION = [[/\bc\s?(?:___|\d)/i, "Neck / cervical"], [/\bt\s?(?:___|\d{1,2})\b/i, "Thoracic spine"], [/\bl\s?(?:___|\d)|\bs\s?(?:___|[12])\b/i, "Trunk / lumbar"]];
+  function packLineFitsRegion(line) {
+    if (S.region === "General / other") return true;   // export already keeps region-free lines only in "p"
+    const regs = DETECT.regionsOf ? DETECT.regionsOf(line) : new Set();
+    LEVEL_REGION.forEach(([re, r]) => { if (re.test(line.replace(SIDE_TOKEN, " "))) regs.add(r); });
+    return !regs.size || regs.has(S.region);
+  }
+  const packSide = (line) => (line.includes(SIDE_TOKEN) ? withSide(S.side ? line : line.split(SIDE_TOKEN).join("___")) : line);
   function applyPack() {
-    if (!S.condition) return;
-    const handKey = V.CONDITION_PACKS ? Object.keys(V.CONDITION_PACKS).find((re) => new RegExp(re, "i").test(S.condition)) : null;
-    const hit = SG ? findCondition(currentCondition()) : null;
-    const chartPack = hit && hit[1].p ? hit[1].p : null;
-    if (!handKey && !chartPack) return;
-    const packKey = (handKey || "") + "|" + (hit ? hit[0] : "");
-    if (S.packApplied === packKey) return; S.packApplied = packKey;
-    const merged = {};
-    if (chartPack) Object.entries(chartPack).forEach(([heading, lines]) => { merged[heading] = (merged[heading] || []).concat(lines); });
-    if (handKey) Object.entries(V.CONDITION_PACKS[handKey]).forEach(([heading, lines]) => { merged[heading] = (merged[heading] || []).concat(lines); });
-    Object.entries(merged).forEach(([heading, lines]) => {
+    // Owner decision 2026-09-15: a condition's measurement lines are offered as tap-to-add chips
+    // under each box, never written into the box as "___" blanks. Region-aware, and recomputed
+    // whenever the condition, region or side changes.
+    const wanted = {};
+    // vetted = the export (or the hand-written pack) already filed these lines under this exact
+    // region; the guard is for the region-free lines only ("above knee level" is a lumbar
+    // fingertip measure, and the body-word guard would misread it as a knee line)
+    const add = (heading, lines, vetted) => {
       const sec = heading === "Exercise" ? "exercise" : "objective";
       const t = target(sec, heading); if (!t || !t[0]) return;
-      lines.forEach((line) => { if (!hasLine(t[0], line)) append(t[0], line, t[1] || "", true); });
-    });
-    renderOutput();
+      lines.forEach((raw) => {
+        const line = packSide(raw);
+        if (!vetted && !packLineFitsRegion(line)) return;
+        (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" });
+      });
+    };
+    if (S.condition) {
+      const handKey = V.CONDITION_PACKS ? Object.keys(V.CONDITION_PACKS).find((re) => new RegExp(re, "i").test(S.condition)) : null;
+      const hit = SG ? findCondition(currentCondition()) : null;
+      if (hit && hit[1].p) Object.entries(hit[1].p).forEach(([h, lines]) => add(h, lines, false));
+      if (hit && hit[1].pr && hit[1].pr[S.region]) Object.entries(hit[1].pr[S.region]).forEach(([h, lines]) => add(h, lines, true));
+      if (handKey) Object.entries(V.CONDITION_PACKS[handKey]).forEach(([k, v]) => {
+        if (k.startsWith("@")) { if (k.slice(1) === S.region) Object.entries(v).forEach(([h, lines]) => add(h, lines, true)); }
+        else add(k, v, false);
+      });
+    }
+    S.packChips = wanted;
+    renderSuggest();
   }
   function prefillTests() {
+    // Owner decision 2026-09-15 (after physios used it): no "Name: ___ve" blanks pre-listed in
+    // the box. A test appears only when it was actually said (detect.js, with its result) or
+    // tapped from the list below the box. "If ten tests exist and we say five, only five show."
+    return;
+    // eslint-disable-next-line no-unreachable
     const P = V.REGION_PROFILE[S.region]; if (!P || S.region === "General / other") return;
     const t = target("objective", "Special test"); if (!t || !t[0]) return;
     const field = t[0], heading = t[1] || "";
@@ -436,7 +466,7 @@
   function clearCondition() {
     if (S.condition) removeLine(dxField(), S.condition);
     S.condition = ""; S.conditionAuto = false;
-    clearPrefilledTests();
+    clearPrefilledTests(); applyPack();   // no condition -> its pack lines go too
     renderCondTag(); renderOutput(); renderSuggest();
   }
   function renderCondTag() {
@@ -457,6 +487,7 @@
       const next = lines.map((l) => { const tl = l.trim(); if (!/___ve\s*$/.test(tl) || !S.prefilled.has(testName(tl))) return l; const nl = `${testName(tl)}${s && s !== "Both" ? " " + s : ""}: ${BLANK}ve`; if (nl !== tl) changed = true; return l.replace(tl, nl); });
       if (changed) { S.fields[t[0]] = next.join("\n"); updateTa(t[0]); renderOutput(); }
     }
+    if (S.packChips) applyPack();   // pack chips carry the side too
     if (!quiet) renderSuggest();
   }
 
@@ -513,30 +544,31 @@
     return best;
   }
   function renderSuggest() {
-    if (!SG) return;
-    const q = currentCondition(); const hit = q ? findCondition(q) : null;
+    const q = currentCondition(); const hit = q && SG ? findCondition(q) : null;
     document.querySelectorAll(".sugg").forEach((box) => {
       box.innerHTML = ""; const field = box.dataset.for;
-      if (!hit) return; // nothing until a condition is chosen
-      const labels = EQUIV[field] || [field];
+      // the condition's own measurement templates first (applyPack, region-gated), then the
+      // lines physios most often wrote for it
+      const packed = ((S.packChips || {})[field] || []).map((x) => ({ t: x.line, heading: x.heading }));
       let lines = [];
-      for (const l of labels) { if (hit[1].s[l] && hit[1].s[l].length) { lines = hit[1].s[l]; break; } }
-      if (!lines.length) return;
+      if (hit) { const labels = EQUIV[field] || [field]; for (const l of labels) { if (hit[1].s[l] && hit[1].s[l].length) { lines = hit[1].s[l]; break; } } }
+      const cands = [...packed, ...lines.map(([line]) => ({ t: withSide(line), heading: "" }))];
+      if (!cands.length) return;
       const seen = new Set();
-      const shown = lines.map(([line]) => withSide(line)).filter((t) => {
+      const shown = cands.filter(({ t }) => {
         const k = t.toLowerCase(); if (!t || seen.has(k) || hasLine(field, t)) return false;
         if (S.condition && k === S.condition.toLowerCase()) return false;
-        if (field === "Analysis" || field === "Diagnosis") { const same = findCondition(t.toLowerCase()); if (same && same[0] === hit[0]) return false; }   // the condition itself under another spelling
+        if (hit && (field === "Analysis" || field === "Diagnosis")) { const same = findCondition(t.toLowerCase()); if (same && same[0] === hit[0]) return false; }   // the condition itself under another spelling
         if (/^dx:?\s/i.test(t)) return false;
         if (offRegion(t)) return false;
         seen.add(k); return true;
-      }).slice(0, 12);
+      }).slice(0, 12 + packed.length);
       if (!shown.length) return;
       const p = document.createElement("p"); p.className = "sub";
-      p.textContent = `For ${hit[0]} (${hit[1].n} BPC charts) — tap to add` + (S.side ? `, side ${S.side}` : "");
+      p.textContent = (hit ? `For ${hit[0]} (${hit[1].n} BPC charts) — tap to add` : `For ${S.condition} — tap to add`) + (S.side ? `, side ${S.side}` : "");
       box.appendChild(p);
       const wrap = document.createElement("div"); wrap.className = "chips";
-      shown.forEach((t) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip sg"; b.textContent = t; b.onclick = () => { append(field, t, ""); renderSuggest(); }; wrap.appendChild(b); });
+      shown.forEach(({ t, heading }) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip sg"; b.textContent = t; b.onclick = () => { append(field, t, heading || ""); renderSuggest(); }; wrap.appendChild(b); });
       box.appendChild(wrap);
     });
   }
@@ -964,6 +996,7 @@
   const ASR_LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
   const ASR_MODELS = { "en-US": "onnx-community/whisper-base.en", "th-TH": "onnx-community/whisper-small" };
   const asr = { model: "", pipe: null, loading: null, busy: false };
+  const ASR_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
   const asrState = (t) => { const el = $("asrstate"); if (el) el.textContent = t; };
   async function getAsr(lang) {
     const model = ASR_MODELS[lang] || ASR_MODELS["en-US"];
@@ -981,9 +1014,12 @@
         if (t) asrState(`Downloading the speech model — ${Math.min(99, Math.round(l / t * 100))}% (once only; it stays on this device)`);
       };
       // decide the device before the first load: once a WebGPU attempt fails, the runtime
-      // cannot start WebAssembly on the same page any more
+      // cannot start WebAssembly on the same page any more. WebGPU only on desktop Chrome/Edge,
+      // where it is known to work; phones, iPads and Safari take the plain WebAssembly path
+      // (2026-09-15: a physio's English recording failed outright, most likely this)
       let gpu = false;
-      try { gpu = !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (e) { gpu = false; }
+      const desktopChromium = /Chrome\//.test(navigator.userAgent) && !ASR_MOBILE;
+      try { gpu = desktopChromium && !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch (e) { gpu = false; }
       if (gpu) return await T.pipeline("automatic-speech-recognition", model, { device: "webgpu", dtype: { encoder_model: "fp32", decoder_model_merged: "q4" }, progress_callback });
       return await T.pipeline("automatic-speech-recognition", model, { device: "wasm", dtype: "q8", progress_callback });
     })();
@@ -1008,12 +1044,21 @@
     const btn = $("audiobtn"); btn.classList.add("busy"); asr.busy = true;
     const lang = S.lang || "th-TH";
     try {
-      asrState("Reading the recording…");
-      const samples = await decodeAudio(file);
+      // a phone holds the whole recording decoded in memory: a long session can be too much for it
+      if (ASR_MOBILE && file.size > 12 * 1024 * 1024) asrState("Long recording on a phone — if this fails, use a laptop, or open the memo in Voice Memos, copy its transcript and paste it above.");
+      else asrState("Reading the recording…");
+      let samples;
+      try { samples = await decodeAudio(file); }
+      catch (e) { throw new Error("That file could not be opened as audio — try an .m4a, .mp3 or .wav (" + (e && e.message ? String(e.message).slice(0, 80) : "decode failed") + ")"); }
       const total = samples.length / 16000;
       if (total < 0.5) throw new Error("That file has no sound in it");
-      asrState("Loading the speech model…");
-      const pipe = await getAsr(lang);
+      asrState(`Loading the speech model (${lang === "th-TH" ? "Thai, about 250 MB the first time" : "English, about 75 MB the first time"})…`);
+      let pipe;
+      try { pipe = await getAsr(lang); }
+      catch (e) {
+        const m = e && e.message ? String(e.message).slice(0, 140) : "";
+        throw new Error(/fetch|network|load|import|Failed/i.test(m) ? "Could not download the speech engine — check the internet connection and try again (" + m + ")" : "The speech engine could not start on this device (" + m + "). Try a laptop, or paste the transcript from Voice Memos instead.");
+      }
       const ta = $("transcript");
       const header = `[From recording — ${file.name}${lang === "th-TH" ? ", Thai" : ", English"}]`;
       ta.value = (ta.value.replace(/\s+$/, "") ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + header + "\n";
@@ -1038,8 +1083,10 @@
       setTimeout(() => asrState(""), 12000);
       toast("Recording transcribed");
     } catch (err) {
-      console.error(err); asrState("");
-      toast(/decod/i.test(String(err && err.message)) ? "That file could not be opened as audio — try an .m4a, .mp3 or .wav" : (err && err.message) || "The recording could not be transcribed");
+      console.error(err);
+      const msg = (err && err.message) || "The recording could not be transcribed";
+      asrState(msg + " — you can still open the memo in Voice Memos, copy its transcript and paste it above.");   // stays on screen, so it can be screenshotted
+      toast(msg.slice(0, 120));
     } finally { btn.classList.remove("busy"); asr.busy = false; }
   }
 
@@ -1091,7 +1138,7 @@
     $("formats").appendChild(l);
   });
   V.REGIONS.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; $("region").appendChild(o); });
-  $("region").onchange = (e) => { S.region = e.target.value; S.regionManual = true; renderBuilder(); autoFill(); };
+  $("region").onchange = (e) => { S.region = e.target.value; S.regionManual = true; renderBuilder(); prefillTests(); applyPack(); autoFill(); };
   $("tt").oninput = renderOutput; $("patient").oninput = renderOutput;
   $("dxq").oninput = renderDx;
   $("dxq").onkeydown = (e) => {
@@ -1118,7 +1165,7 @@
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
   $("copy").onclick = copyNote;
-  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.packApplied = ""; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.packChips = {}; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();

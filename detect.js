@@ -670,7 +670,9 @@ window.DETECT = (function () {
     };
     const modToday = modEarly.filter((h) => !patientSaid(h.i));
     const justAfter = (h, n) => low.slice(h.i + h.len, h.i + h.len + (n || 14));
-    const aggHits = pick(scan(Object.entries(AGG_AL), low)).filter((h) => !overlaps(h, modToday) && !overlaps(h, phraseHits) && cueNear(WORSE, h) && !BETTER.test(justAfter(h)));
+    // "fell down the stairs" / "ตกบันได" is how it started, not what makes it worse
+    const MECHANISM_BEFORE = /(?:\b(?:fell|fall|falling|slipped|slip|tripped|trip|hurt (?:myself|herself|himself))\b[^.,;\n]{0,16}|ตก|ล้ม|หกล้ม|พลิก|บิด)$/;
+    const aggHits = pick(scan(Object.entries(AGG_AL), low)).filter((h) => !overlaps(h, modToday) && !overlaps(h, phraseHits) && cueNear(WORSE, h) && !BETTER.test(justAfter(h)) && !MECHANISM_BEFORE.test(low.slice(Math.max(0, h.i - 24), h.i)));
     aggHits.forEach((h) => { push("subjective", "", h.term); out.heard.add(h.term); });
     pick(scan(Object.entries(EASE_AL), low)).filter((h) => !overlaps(h, modToday) && !overlaps(h, phraseHits) && cueNear(BETTER, h) && !/มากขึ้น|แย่ลง|\bworse\b/.test(justAfter(h))).forEach((h) => { push("subjective", "", h.term); out.heard.add(h.term); });
 
@@ -698,6 +700,21 @@ window.DETECT = (function () {
       });
       if (neg.length) push("subjective", "PastHistory", "No " + neg.join(", no "));
       pos.forEach((line) => push("subjective", "PastHistory", line));
+    }
+
+    // Present history — how long it has been going on, and what started it. Both are copied
+    // in the physio's own words; nothing is inferred.
+    {
+      const NUM_EN = "(?:\\d+(?:\\.\\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|twelve|couple of|few|several|many)";
+      const DUR_EN = new RegExp("\\b(?:(?:for|since|about|around|approximately|over|past|last|nearly|almost)\\s+)*(" + NUM_EN + "\\s+(?:days?|weeks?|wks?|months?|years?|yrs?)(?:\\s+ago)?)\\b", "i");
+      const DUR_TH = /(?:มา|ประมาณ|มาประมาณ|เป็นมา|ราวๆ|ราว)?\s*((?:\d+|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|หลาย|สองสาม)\s*(?:วัน|สัปดาห์|อาทิตย์|เดือน|ปี)(?:แล้ว|ก่อน|ที่แล้ว)?)/;
+      const MECH_EN = /\b(?:after|since|from|following|when|while)\s+((?:[^.,;\n]{0,40}?)\b(?:fell|fall|falling|slipped|slip|tripped|trip|twisted|twist|rolled|landed|accident|collision|crash|lifting|lifted|carrying|running|jogging|playing|training|exercise|exercising|gym|football|soccer|basketball|badminton|tennis|golf|volleyball|marathon|hiking|cycling|surgery|operation|injection)\b[^.,;\n]{0,40})/i;
+      const MECH_TH = /(?:หลังจาก|หลัง|จาก|เพราะ|ตอน|ขณะ)\s*([^.,;\n]{0,24}?(?:ตกบันได|ตก|ล้ม|หกล้ม|พลิก|บิด|อุบัติเหตุ|รถชน|ยกของ|วิ่ง|เล่น(?:กีฬา|บอล|ฟุตบอล|แบด|บาส|เทนนิส|กอล์ฟ)?|ซ้อม|ออกกำลังกาย|ผ่าตัด|ฉีดยา)[^.,;\n]{0,30})/;
+      const skip = (i) => isQuestion(qLine(i)) || (labelled && !patientSaid(i) && !/\b(patient|he|she|they)\b|คนไข้|ผู้ป่วย/.test(speakerLine(low, i)));
+      const dm = DUR_EN.exec(low) || DUR_TH.exec(low);
+      if (dm && !skip(dm.index)) push("subjective", "PresentHistory", `Onset: ${dm[1].trim()}`);
+      const mm = MECH_EN.exec(low) || MECH_TH.exec(low);
+      if (mm && !skip(mm.index)) push("subjective", "PresentHistory", `Cause: ${mm[1].trim().replace(/\s+/g, " ")}`);
     }
 
     // VAS — only a value written as n/10

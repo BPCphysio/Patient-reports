@@ -2393,12 +2393,19 @@ window.VOCAB = {
    "Palpation": [
     "Trigger point at ___: ___ (with / without referred pain)"
    ],
-   "Observation": [
-    "Forward head (tragus to wall): ___ cm"
-   ],
-   "Active range of motions": [
-    "Cervical rotation: ___° Rt. / ___° Lt."
-   ]
+   "@Neck / cervical": {
+    "Observation": [
+     "Forward head (tragus to wall): ___ cm"
+    ],
+    "Active range of motions": [
+     "Cervical rotation: ___° Rt. / ___° Lt."
+    ]
+   },
+   "@Trunk / lumbar": {
+    "Active range of motions": [
+     "Lumbar flexion (finger to floor): ___ cm"
+    ]
+   }
   }
  }
 };
