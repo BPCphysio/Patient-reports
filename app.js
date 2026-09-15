@@ -71,7 +71,8 @@
   function usableStub(t) {
     if (!t || t.length < 6) return false;
     if (/\(\s*\)/.test(t)) return false;
-    if (/\b(at|to|of|with|by|and|in|on|for|or|the|a)$/i.test(t)) return false;
+    if (/^\(/.test(t) && !/\)/.test(t)) return false;                        // an opened bracket that never closes: a cut sentence
+    if (/\b(at|to|of|with|by|and|in|on|for|or|the|a|are|is|was|were|be|that|which)$/i.test(t)) return false;
     if (!/:/.test(t) && t.trim().split(/\s+/).length < 3) return false;
     return true;
   }
@@ -466,14 +467,31 @@
     if (S.condition) {
       const handKey = V.CONDITION_PACKS ? Object.keys(V.CONDITION_PACKS).find((re) => new RegExp(re, "i").test(S.condition)) : null;
       const hit = SG ? findCondition(currentCondition()) : null;
+      // No region chosen ("General / other" — MPS, muscle imbalance, poor posture…): the region
+      // gate is fully open and the condition brings everything its charts carry, every region
+      // (owner, 2026-09-16: "put in MPS and everything comes up"). Once a region is set, only
+      // that region's lines — that is the actual fix for knee lines in a neck patient's note.
+      const general = S.region === "General / other";
+      const wantRegion = (r) => general || r === S.region;
       if (handKey) Object.entries(V.CONDITION_PACKS[handKey]).forEach(([k, v]) => {
         // hand-written packs are curated for their condition (scoliosis reads the whole body:
         // head tilt, shoulder level, heels): never region-filtered
-        if (k.startsWith("@")) { if (k.slice(1) === S.region) Object.entries(v).forEach(([h, lines]) => add(h, lines, true, false)); }
+        if (k.startsWith("@")) { if (wantRegion(k.slice(1))) Object.entries(v).forEach(([h, lines]) => add(h, lines, true, false)); }
         else add(k, v, true, false);
       });
       if (hit && hit[1].p) Object.entries(hit[1].p).forEach(([h, lines]) => add(h, lines, false, true));
-      if (hit && hit[1].pr && hit[1].pr[S.region]) Object.entries(hit[1].pr[S.region]).forEach(([h, lines]) => add(h, lines, true, true));
+      if (hit && hit[1].pr) Object.entries(hit[1].pr).forEach(([r, hs]) => { if (wantRegion(r)) Object.entries(hs).forEach(([h, lines]) => add(h, lines, true, true)); });
+      // A section the packs left empty still gets what this condition's charts most often say
+      // there (the same lines the tap-to-add rows offer), so no condition comes up bare.
+      if (hit && hit[1].s) {
+        ["Observation", "Palpation", "Active range of motions", "Passive range of motions", "Muscle power", "PAIVMS", "Functional test", "Special test", "Neurological examination", "Treatment"].forEach((label) => {
+          const t = target(label === "Treatment" ? "treatment" : "objective", label); if (!t || !t[0]) return;
+          const already = (wanted[t[0]] || []).some((w) => !t[1] || w.heading === t[1]);
+          if (already) return;
+          const lines = (hit[1].s[label] || []).map(([line]) => noBlanks(withSide(String(line).replace(/^\s*\d+[.)]\s*/, "")))).filter((l) => usableStub(l) && !offRegion(l) && !/^dx:?\s/i.test(l)).slice(0, 3);
+          lines.forEach((line) => { if (!(wanted[t[0]] || []).some((w) => w.line.toLowerCase() === line.toLowerCase())) (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" }); });
+        });
+      }
     }
     const key = (x) => x.heading + "" + x.line;
     new Set([...Object.keys(prev), ...Object.keys(wanted)]).forEach((field) => {
@@ -489,15 +507,18 @@
   // The region's usual special tests are pre-listed as "Name:" (no blank) so the physio sees
   // what is normally checked; a result said in the notes fills the line, an unused one is deleted.
   function prefillTests() {
-    const P = V.REGION_PROFILE[S.region]; if (!P || S.region === "General / other") return;
+    const general = S.region === "General / other";
+    const P = V.REGION_PROFILE[S.region]; if (!P && !general) return;
     const t = target("objective", "Special test"); if (!t || !t[0]) return;
     const field = t[0], heading = t[1] || "";
     const hit = S.condition && SG ? findCondition(currentCondition()) : null;
     const known = new Set(V.SPECIAL_TESTS);
-    // the tests physios record for this condition go first; the rest of the region's usual tests follow
+    // the tests physios record for this condition go first; the rest of the region's usual tests follow.
+    // With no region chosen, the condition's own recorded tests are listed on their own.
     const fix = (n) => (S.region === "Ankle & foot" && n === "Anterior drawer (knee)" ? "Anterior drawer (ankle)" : n);
-    const condTests = hit && hit[1].t ? hit[1].t.map(fix).filter((n) => known.has(n) && P.tests.includes(n)) : [];
-    const testList = [...condTests, ...P.tests.filter((n) => !condTests.includes(n))];
+    const condTests = hit && hit[1].t ? hit[1].t.map(fix).filter((n) => known.has(n) && (general || P.tests.includes(n))) : [];
+    if (general && !condTests.length) return;
+    const testList = general ? condTests : [...condTests, ...P.tests.filter((n) => !condTests.includes(n))];
     const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /(\+ve|-ve|:)\s*$/.test(l)).map(testName));
     S.prefilled = S.prefilled || new Set();
     testList.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}:`, heading, true); S.prefilled.add(name); });
@@ -551,7 +572,8 @@
   function withSide(line) {
     if (!line.includes(SIDE_TOKEN)) return line;
     let s = S.side ? line.split(SIDE_TOKEN).join(S.side) : line.split(SIDE_TOKEN).join("");
-    return s.replace(/\(\s*\)/g, "").replace(/\s+/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/\(\s+/g, "(").trim();
+    // "to ⟨side⟩/⟨side⟩ ;" with no side chosen leaves "to /;" — drop the orphaned slash too
+    return s.replace(/\(\s*\)/g, "").replace(/\s*\/\s*(?=[\s,;:.)]|$)/g, "").replace(/\s+/g, " ").replace(/\s+([,.;:)])/g, "$1").replace(/\(\s+/g, "(").trim();
   }
   // Lines that already exist as standard options below the box are not repeated as suggestions.
   // a line about another part of the body has no place in this note (a neck case does not get the hamstrings)
