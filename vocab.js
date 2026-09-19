@@ -98,6 +98,85 @@ window.VOCAB = {
    "Foot posture Lt.: neutral / supination / pronation"
   ]
  },
+ "OBSERVATION_VIEWS": {
+  "Anterior view": [
+   "Head shift to left",
+   "Head shift to right",
+   "Shoulder level Rt.>Lt.",
+   "Shoulder level Lt.>Rt.",
+   "Uneven shoulder",
+   "Clavicle asymmetry",
+   "Pelvic asymmetry",
+   "Hip elevation Rt.",
+   "Hip elevation Lt.",
+   "Genu valgum (knock knee)",
+   "Genu varum (bow leg)",
+   "Knee valgus",
+   "Knee varus",
+   "Patella alta",
+   "Patellar lateral shift"
+  ],
+  "Lateral view": [
+   "Forward head",
+   "Forward head posture",
+   "Chin out",
+   "Round shoulder",
+   "Scapular protraction",
+   "Thoracic hyperkyphosis",
+   "Thoracic flattened",
+   "Thoracic hypokyphosis (flat back)",
+   "Flatback",
+   "Lumbar hyperlordosis",
+   "Anterior pelvic tilt",
+   "Posterior pelvic tilt",
+   "Genu recurvatum"
+  ],
+  "Posterior view": [
+   "Scapular winging",
+   "Scoliosis",
+   "No scoliosis",
+   "Symmetrical PSIS",
+   "Lumbar shift to Rt.",
+   "Lumbar shift to Lt.",
+   "Flat feet",
+   "Mild flat feet",
+   "No flat feet",
+   "Pes cavus",
+   "Foot posture Rt.: neutral / supination / pronation",
+   "Foot posture Lt.: neutral / supination / pronation"
+  ],
+  "Skin & soft tissue": [
+   "Swelling",
+   "Muscle atrophy",
+   "Bruising",
+   "Scar",
+   "Redness",
+   "Increased skin temperature"
+  ],
+  "Gait & weight bearing": [
+   "Antalgic gait",
+   "Non-weight bearing (NWB)",
+   "Partial weight bearing",
+   "On crutches",
+   "In moon boot"
+  ],
+  "Overall": [
+   "Normal posture",
+   "Poor posture"
+  ]
+ },
+ "MMT_GRADES": [
+  "Grade 5/5",
+  "Grade 4+/5",
+  "Grade 4/5",
+  "Grade 4-/5",
+  "Grade 3+/5",
+  "Grade 3/5",
+  "Grade 2/5",
+  "Grade 1/5",
+  "Weak",
+  "Normal"
+ ],
  "PALPATION_FINDINGS": [
   "Tenderness",
   "Tightness",

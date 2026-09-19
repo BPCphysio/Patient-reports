@@ -73,6 +73,59 @@ window.DETECT = (function () {
   const hasSpeakers = (low) => /^\s*(patient|physio|therapist|pt|ผู้ป่วย|คนไข้|นักกายภาพ)[^:\n]{0,24}:/im.test(low);
   const isPatientLine = (c) => /^\s*(patient|pt\.?|ผู้ป่วย|คนไข้)[^:\n]{0,20}:/i.test(c);
   const sameLine = (low, a, b) => !low.slice(Math.min(a, b), Math.max(a, b)).includes("\n");
+
+  // ---- a recorder's transcript pasted in (Plaud, Voice Memos): one run-on block, no speaker
+  // labels, and accented English misheard ("the right hit", "SI joy", "to the website").
+  // Everything that reads a test result or a ROM finding from the patient's reply needs to know
+  // who is speaking, so the block is cut into sentences and each one given to the physio
+  // (questions, instructions, explanations) or the patient (short answers, "I feel…").
+  const ASR_FIX = [
+    [/\bs\.?\s?i\.? (?:joy|joys|toy|story|join|joined)\b/gi, "SI joint"],
+    [/\b(?:hit|heat|heap|heep|keep|him) (in|ex|x)\w*\s?(?:no )?rotation\b/gi, (m, a) => "hip " + (/^in/i.test(a) ? "internal" : "external") + " rotation"],
+    [/\b(right|left|your|the|my) (?:hit|heat|heap)\b/gi, "$1 hip"],
+    [/\b(?:hit|heat|heap) (joint|joy|motion|movement|muscle|flexor)\b/gi, (m, a) => "hip " + (/^joy$/i.test(a) ? "joint" : a)],
+    [/\b(to|into|on|in) the website\b/gi, "$1 the left side"],
+    [/\b(your|the|my) spy\b/gi, "$1 spine"],
+    [/\b(in|on|and) the growing\b/gi, "$1 the groin"],
+    [/\b(feel|feeling|any|is|quite|little|bit|you) thai\b/gi, "$1 tight"],
+    [/\b(your|my) (?:glue|blood)\b/gi, "$1 glute"],
+    [/\b(let me|i will|i'll|we) (?:shake|share|shit|shape)\b/gi, "$1 check"],
+    [/\b(?:bigger|figure) (?:4|four)\b/gi, "figure four"],
+    [/\byour no back\b/gi, "your low back"],
+  ];
+  const CONVO_PHYSIO = /\b(i want you|i want to|can you|could you|let me|i will|i'll|we will|we'll|we call|please|how (?:do |did |are |about )?you|tell me|next thing|last (?:one|thing)|that'?s why|so (?:this|that|it|basically|when|meaning|i think)|meaning|inhale|exhale|one,? two|stay here|okay,? (?:then|so|now|and|let|next)|then (?:we|i|can|bending|turn)|you (?:have|need|tend|still have)|your \w+(?: \w+)? (?:is|are)\b)/i;
+  const CONVO_PATIENT = /^(?:oh,? |um,? |uh,? |well,? |okay,? |ok,? )*(?:yes|yeah|yep|yup|no|nope|mm+|mhm|it'?s (?:okay|ok|fine|not|just|actually)|is okay|it (?:feels|just|kind|was|doesn'?t)|not (?:bad|really|painful|feeling)|just|a little|same|nothing|only when|when it|right here|in here|here|on that|the right|the left)\b/i;
+  const CONVO_FIRST = /^(?:oh,? |um,? |uh,? |well,? |yeah,? |yes,? |no,? |but |so |and |like |because |when )*(?:sometimes )?(?:i|my)\b(?! (?:will|want|think (?:it|that|your|maybe|now)|am going|need you|noticed? (?:that )?you)\b)(?!'ll)/i;
+  function asConversation(text) {
+    if (hasSpeakers(text)) return text;
+    const latin = (text.match(/[a-z]/gi) || []).length, thai = (text.match(/[ก-๙]/g) || []).length;
+    if (thai > latin * 0.3) return text;
+    // a recorder that labels turns "Speaker 1:" — the one who asks the questions is the physio
+    if (/^\s*speaker ?\d+\s*[:：]/im.test(text)) {
+      const q = {}; text.split("\n").forEach((l) => { const m = /^\s*speaker ?(\d+)\s*[:：]/i.exec(l); if (m) q[m[1]] = (q[m[1]] || 0) + (l.match(/\?/g) || []).length + (CONVO_PHYSIO.test(l) ? 1 : 0); });
+      const phys = Object.keys(q).sort((a, b) => q[b] - q[a])[0];
+      return text.replace(/^\s*speaker ?(\d+)\s*[:：]/gim, (m, n) => (n === phys ? "Clinician:" : "Patient:"));
+    }
+    const asks = (text.match(/\?/g) || []).length, cues = (text.match(/\bhow (?:do |did |are |about )?you feel|\bcan you\b|\bi want you\b|\blet me\b/gi) || []).length;
+    if (asks < 4 || cues < 3) return text;
+    ASR_FIX.forEach(([re, to]) => { text = text.replace(re, to); });
+    const out = []; let who = "Clinician", prevQ = false;
+    text.split("\n").forEach((para) => {
+      para.split(/(?<=[.?!])\s+/).forEach((s) => {
+        s = s.trim(); if (!s) return;
+        let sp;
+        if (/\?\s*$/.test(s)) sp = "Clinician";
+        else if (/^(?:okay|ok|good|alright|all right)[.,!]*$/i.test(s)) sp = prevQ ? "Patient" : "Clinician";
+        else if (CONVO_FIRST.test(s)) sp = /your?/i.test(s) && !/when you (?:press|push|do|move|touch|lift|bend)/i.test(s) ? "Clinician" : "Patient";   // "I feel like your SI joint…" is the physio
+        else if (CONVO_PATIENT.test(s) && !CONVO_PHYSIO.test(s)) sp = "Patient";
+        else if (CONVO_PHYSIO.test(s)) sp = "Clinician";
+        else sp = prevQ ? "Patient" : who;
+        if (out.length && sp === who) out[out.length - 1] += " " + s; else out.push(sp + ": " + s);
+        who = sp; prevQ = /\?\s*$/.test(s);
+      });
+    });
+    return out.join("\n");
+  }
   // the side word nearest the term: just after it, then just before it, then anywhere in the clause
   function sideNear(low, i, len, beforeLen, fallback, afterLen) {
     const after = low.slice(i + len, i + len + (afterLen === undefined ? 16 : afterLen));
@@ -524,7 +577,10 @@ window.DETECT = (function () {
   const HISTORY = /\b(previous\w*|history|years? ago|months? ago|weeks? ago|before|used to|old|childhood)\b|เคย|มาก่อน|ปีก่อน|ปีที่แล้ว|เดือนก่อน/;
 
   function run(text, region) {
-    text = String(text || "")
+    const rawText = String(text || "");
+    text = asConversation(rawText);
+    const convo = text !== rawText;
+    text = text
       .replace(/^[ \t]*\[\d{1,2}:\d{2}(?::\d{2})?\][ \t]*/gm, "")        // "[03:22] " at the start of a line
       .replace(/^Transcript:[^\n]*$/m, "")                                 // the transcriber's header line
       .replace(/[๐-๙]/g, (d) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(d)));           // Thai numerals
@@ -574,12 +630,27 @@ window.DETECT = (function () {
       }
       return txt.slice(0, 160);
     };
+    // in a recording the physio often asks again ("where do you feel it?") before the real answer:
+    // take the patient's lines up to the physio's next instruction
+    const NEXT_STEP = /\b(then|next|now|can you|could you|i want you|let me|i will|i'll|we call|this (?:one )?is|bend\w*|turn\w*|lift\w*|lie|lying|check\w*|do you (?:have|take)|have you|any (?:surgery|accident|medication|underlying))\b/;
+    const convoReply = (i, max) => {
+      let e = low.indexOf("\n", i), txt = "", got = 0;
+      while (e >= 0 && e < low.length && got < (max || 3)) {
+        const e2 = low.indexOf("\n", e + 1); const line = low.slice(e + 1, e2 < 0 ? low.length : e2);
+        if (isPatientLine(line)) { txt += " " + line.replace(/^[^:]*:/, ""); got++; }
+        else if (line.trim() && (line.length > 70 || !/\?\s*$/.test(line.trim()) || NEXT_STEP.test(line))) break;
+        e = e2;
+      }
+      return txt.slice(0, 260);
+    };
     const nextLines = (i, n) => { const out = []; let e = low.indexOf("\n", i); while (e >= 0 && out.length < (n || 3)) { const e2 = low.indexOf("\n", e + 1); const line = low.slice(e + 1, e2 < 0 ? low.length : e2); if (line.trim()) out.push(line); e = e2 < 0 ? -1 : e2; } return out; };
     const replyResult = (i, name) => {
-      const r = replyAfter(i).replace(/^\s*(patient|pt|ผู้ป่วย|คนไข้)[^:\n]{0,20}:/i, "");
+      const r = (convo ? convoReply(i) : replyAfter(i)).replace(/^\s*(patient|pt|ผู้ป่วย|คนไข้)[^:\n]{0,20}:/i, "");
       const cues = LAY.TEST_CUES && LAY.TEST_CUES[name];
       if (cues) { const around = low.slice(i, i + 220) + " " + nextLines(i, 3).join(" "); if (cues[0].test(around)) return "+ve"; if (cues[1].test(around)) return "-ve"; }
       if (!r.trim()) return "";
+      // a recording: "just a stretch, it doesn't hurt" is a negative test
+      if (convo && /\bstretch/.test(r) && !/\b(pain|painful|hurts?|sharp|pinch\w*)\b/.test(r.replace(/(\bno|\bnot|n't)\s*(?:\w+\s+){0,2}(pain\w*|hurt\w*)/g, " "))) return "-ve";
       const pn = r.search(LAY.POSITIVE), ng = r.search(LAY.NEGATIVE); if (pn < 0 && ng < 0) return ""; if (ng < 0 || (pn >= 0 && pn < ng)) return "+ve"; return "-ve";
     };
 
@@ -691,6 +762,23 @@ window.DETECT = (function () {
         let m; re.lastIndex = 0;
         while ((m = re.exec(low))) {
           if (phSeen.has(label)) break;
+          // a session with two speakers: "Any surgery before?" / "No, never." — the answer is the history
+          if (labelled) {
+            const Lb = label[0].toUpperCase() + label.slice(1);
+            if (patientSaid(m.index)) {
+              const sent = sentenceOf(m.index).replace(/^[^:\n]{0,24}:/, "").trim();
+              if (negated(low, m.index) || /\b(never|no|none|don'?t have|haven'?t had)\b|ไม่เคย|ไม่มี/.test(sent)) neg.push(label); else pos.push(`${Lb}: ${sent.replace(/[.?!]+$/, "").slice(0, 90)}`);
+              phSeen.add(label); break;
+            }
+            if (/\?/.test(sentenceOf(m.index)) || /ไหม|มั้ย|หรือเปล่า/.test(sentenceOf(m.index))) {
+              const ans = (convo ? convoReply(m.index, 1) : replyAfter(m.index)).replace(/^\s*[^:\n]{0,24}:/, "").trim().replace(/\bi\b/g, "I").replace(/^[a-z]/, (c) => c.toUpperCase());
+              if (!ans) continue;
+              if (/^(?:no|nope|never|none|nothing|not really|i don'?t)\b/i.test(ans) || /^(?:ไม่เคย|ไม่มี|ไม่)/.test(ans)) neg.push(label);
+              else if (/^(?:yes|yeah|yep|i (?:have|had|did|do|take))\b/i.test(ans) || /^(?:เคย|มี|ใช่)/.test(ans)) pos.push(`${Lb}: ${ans.split(/(?<=[.?!])\s+/).slice(0, 2).join(" ").replace(/[.?!]+$/, "").slice(0, 90)}`);
+              else continue;
+              phSeen.add(label); break;
+            }
+          }
           if (isQuestion(qLine(m.index)) || patientSaid(m.index)) { continue; }
           if (negated(low, m.index)) { neg.push(label); phSeen.add(label); break; }
           const tail = low.slice(m.index + m[0].length, m.index + m[0].length + 40).match(/^\s*(?:is|of|:|คือ)?\s*([a-zก-๙][^.,;\n]{2,38})/);
@@ -711,10 +799,12 @@ window.DETECT = (function () {
       const MECH_EN = /\b(?:after|since|from|following|when|while)\s+((?:[^.,;\n]{0,40}?)\b(?:fell|fall|falling|slipped|slip|tripped|trip|twisted|twist|rolled|landed|accident|collision|crash|lifting|lifted|carrying|running|jogging|playing|training|exercise|exercising|gym|football|soccer|basketball|badminton|tennis|golf|volleyball|marathon|hiking|cycling|surgery|operation|injection)\b[^.,;\n]{0,40})/i;
       const MECH_TH = /(?:หลังจาก|หลัง|จาก|เพราะ|ตอน|ขณะ)\s*([^.,;\n]{0,24}?(?:ตกบันได|ตก|ล้ม|หกล้ม|พลิก|บิด|อุบัติเหตุ|รถชน|ยกของ|วิ่ง|เล่น(?:กีฬา|บอล|ฟุตบอล|แบด|บาส|เทนนิส|กอล์ฟ)?|ซ้อม|ออกกำลังกาย|ผ่าตัด|ฉีดยา)[^.,;\n]{0,30})/;
       const skip = (i) => isQuestion(qLine(i)) || (labelled && !patientSaid(i) && !/\b(patient|he|she|they)\b|คนไข้|ผู้ป่วย/.test(speakerLine(low, i)));
-      const dm = DUR_EN.exec(low) || DUR_TH.exec(low);
-      if (dm && !skip(dm.index)) push("subjective", "PresentHistory", `Onset: ${dm[1].trim()}`);
-      const mm = MECH_EN.exec(low) || MECH_TH.exec(low);
-      if (mm && !skip(mm.index)) push("subjective", "PresentHistory", `Cause: ${mm[1].trim().replace(/\s+/g, " ")}`);
+      // the first mention that is not a question (in a conversation the question comes first)
+      const firstOk = (res) => { for (const re0 of res) { const re = new RegExp(re0.source, re0.flags.replace("g", "") + "g"); let m; while ((m = re.exec(low))) { const sn = sentenceOf(m.index); if (/\b(once|twice|times|per|every|each)\s*$/.test(low.slice(Math.max(0, m.index - 8), m.index))) continue; if (/\bago\b/.test(m[0]) && /\b(before|previous\w*|old injur\w*|twice|last time)\b/.test(sn)) continue; if (sn.length < 45 && /\b\d{1,2}\s*[.!]?\s*$/.test(sn)) continue; /* "When I twist it, eight." is a pain score */ if (!skip(m.index) &&!(convo && /\b(sets?|reps?|times|hold|seconds?)\b/.test(low.slice(m.index, m.index + m[0].length + 12)))) return m; } } return null; };
+      const dm = firstOk([DUR_EN, DUR_TH]);
+      if (dm) push("subjective", "PresentHistory", `Onset: ${dm[1].trim()}`);
+      const mm = firstOk([MECH_EN, MECH_TH]);
+      if (mm) push("subjective", "PresentHistory", `Cause: ${mm[1].trim().replace(/\s+/g, " ").replace(/\bi\b/g, "I")}`);
     }
 
     // VAS — only a value written as n/10
@@ -729,7 +819,7 @@ window.DETECT = (function () {
       }
     }
     if (!out.vas && labelled) {
-      const q = /\b(?:zero to ten|0 to 10|out of ten|out of 10|pain scale|scale of|nought to ten|zero being no pain)\b|ศูนย์ถึงสิบ|0 ถึง 10|คะแนน/g; let qm;
+      const q = /\b(?:zero to ten|0 to 10|out of ten|out of 10|pain scale|scale of|nought to ten|zero being no pain|zero is no pain|ten is the worst|how much is the pain|score (?:of|for) (?:the |your )?pain|pain score)\b|ศูนย์ถึงสิบ|0 ถึง 10|คะแนน/g; let qm;
       while ((qm = q.exec(low))) {
         const ln = speakerLine(low, qm.index); if (labelled && isPatientLine(ln)) continue;
         const r = replyAfter(qm.index).replace(/^\s*(patient|pt|ผู้ป่วย|คนไข้)[^:\n]{0,20}:/i, "");
@@ -824,7 +914,8 @@ window.DETECT = (function () {
       const nextM = groupBoundary(h.i, h.len);
       const segEnd = Math.min(nextM === undefined ? low.length : nextM, h.i + h.len + 60, (low.indexOf("\n", h.i) < 0 ? low.length : low.indexOf("\n", h.i)));
       const seg = low.slice(h.i + h.len, segEnd);
-      const layMove = LAY_MOVE_SET.has(low.substr(h.i, h.len));
+      // in a recorded session the finding is the patient's answer, whatever the physio called the movement
+      const layMove = LAY_MOVE_SET.has(low.substr(h.i, h.len)) || (convo && !patientSaid(h.i));
       if (layMove && LAY.MMT_CONTEXT.test(speakerLine(low, h.i))) return;
       if (layMove && /\b(because|that's why|which is why|what we call|the reason|explain|that means|this means|the tendon that|the muscle that|the disc)\b/.test(sentenceOf(h.i))) return;
       if (layMove && EXCTX.test(speakerLine(low, h.i)) && !ROMCTX.test(seg)) return;
@@ -839,11 +930,34 @@ window.DETECT = (function () {
       const heading = PASSIVE.test(wide) ? "Passive range of motions" : "Active range of motions";
       let line;
       const noSideMove = SPINE.has(R) && /\b(flexion|extension)$/.test(h.term) && !/lateral/.test(h.term);
-      let sd = noSideMove ? "" : (sideOfHit(h, 10, 7) || fallbackSide()); if (sd === "Both" && /\bboth\b/.test(low.substr(h.i, h.len))) sd = fallbackSide(); const nm = sd && !/ (Rt\.|Lt\.)$/.test(h.term) ? `${h.term} ${sd}` : h.term;
+      // recorded speech puts the side later in the sentence ("side bending your body … to the right side");
+      // a spine movement with no side said gets none — the side of the complaint is not the side of the bend
+      const spineMove = /^(Trunk|Neck|Lumbar|Thoracic|Cervical)\b/.test(h.term);
+      let sd = noSideMove ? "" : (sideOfHit(h, 10, 7) || (convo ? side(low.slice(h.i + h.len, Math.min(sentEnd(h.i), h.i + h.len + 70))) : "") || (convo && spineMove ? "" : fallbackSide())); if (sd === "Both" && /\bboth\b/.test(low.substr(h.i, h.len))) sd = fallbackSide(); const nm = sd && !/ (Rt\.|Lt\.)$/.test(h.term) ? `${h.term} ${sd}` : h.term;
       const PAIN_ONLY = /\b(pain|painful|ache|hurts?|ouch|ow)\b|ปวด|เจ็บ/, TIGHT = /tight|ตึง|stiff|ฝืด/;
       if (layMove && labelled && !patientSaid(h.i)) {
         const sdL = sd; const nmL = nm;
-        const reply = replyAfter(h.i);
+        const reply = convo ? convoReply(h.i) : replyAfter(h.i);
+        if (convo) {
+          // a recording: the finding is what the patient answered, and where they felt it. Nothing is
+          // assumed about the range itself — "it's okay" is "no pain", never "full ROM".
+          const rNoNeg = reply.replace(/(\bno|\bwithout|\bnot|n't)\s*(?:\w+\s+){0,2}(pain\w*|hurt\w*|bad)/g, " ");
+          const wm = /\b(right|left)?\s*(hip|groin|lower back|low back|buttock|glute|knee|thigh|shoulder|neck|hamstring|calf)\b/.exec(reply);
+          // where it was felt — only worth writing with a side, or when it is somewhere other than the joint being moved
+          const where = wm && (wm[1] || !h.term.toLowerCase().startsWith(wm[2])) ? " at " + (wm[1] ? (wm[1] === "right" ? "Rt. " : "Lt. ") : "") + wm[2].replace("low back", "lower back") : "";
+          // setting up an exercise position ("knees up to ninety degrees, table top, hold") is not a range-of-motion check
+          if (/\b(table ?top|90 degrees|ninety degrees|hold (?:in )?this|inhale|exhale)\b/.test(low.slice(sentStart(h.i), Math.min(low.length, sentEnd(h.i) + 120)))) return;
+          let f = "";
+          if (/\b(pain|painful|ache|hurts?|ouch|ow|sharp)\b/.test(rNoNeg)) f = "pain at end range" + where;
+          else if (/\bpinch/.test(rNoNeg)) f = "pinching at end range" + where;
+          else if (/\bstretch/.test(rNoNeg)) f = "stretch at end range" + where;
+          else if (/\b(tight|stiff|pull\w*)\b/.test(rNoNeg)) f = "tightness at end range" + where;
+          else if (where && /\b(feel|felt|a little)\b/.test(rNoNeg)) f = "felt" + where;
+          else if (/\b(?:still )?feel it\b/.test(rNoNeg)) f = "with discomfort";
+          else if (LAY.NEGATIVE.test(reply) || /\bnot bad\b/.test(reply)) f = "no pain";
+          push("objective", heading, f ? `${nmL}: ${f}` : romLine(nmL));
+          return;
+        }
         // "look up, look down, turn right, left, tilt to each side" — one reply for several movements:
         // "all fine" is full range for each; anything else belongs only to the last movement named
         const laterOnLine = moveHits.some((o) => o.i > h.i && o.term !== h.term && sameLine(low, o.i, h.i) && LAY_MOVE_SET.has(low.substr(o.i, o.len)));
@@ -853,14 +967,16 @@ window.DETECT = (function () {
         const dm = /(?<!arc[^.]{0,30})\b(\d{2,3})\s*(?:degrees?|°|องศา)/.exec(followHead);
         const followHeadNoDeny = followHead.replace(/\b(no|not|without|isn'?t|wasn'?t)\s+(?:any\s+)?(limit(?:ed|ation)?s?|restrict(?:ed|ion)?s?)\b/gi, "").replace(/ไม่\s*(จำกัด|ติด)/g, "");
         const lim = /\b(limited|restricted)\b|จำกัด/.test(followHeadNoDeny) || /\b(half ?way|three quarters|a quarter|can't (?:turn|go|get) far|not far)\b|ได้ครึ่ง/.test(followHead) || /\b(can't (?:turn|go|get) (?:far|very far|any further|further)|not far|only (?:half|a little)|as far as i (?:get|go|can)|that's about as far|to (?:about )?my (?:knees|shins)|half ?way down|halfway)\b/.test(reply);
-        const rPain = /\b(pain|painful|ache|hurts?|ouch|ow|catch|catches|pinch|pinches|sharp)\b|ปวด|เจ็บ/.test(reply.replace(/(\bno|\bwithout|\bnot)\s*(pain\w*)/g, "")), rTight = /tight|ตึง|stiff|ฝืด|pulls?\b/.test(reply);
+        const rPain = /\b(pain|painful|ache|hurts?|ouch|ow|catch|catches|pinch|pinched|pinches|sharp)\b|ปวด|เจ็บ/.test(reply.replace(/(\bno|\bwithout|\bnot)\s*(pain\w*)/g, "")), rTight = /tight|ตึง|stiff|ฝืด|pulls?\b/.test(reply);
         if (dm || lim) { push("objective", heading, `${nmL}: ${dm ? dm[1] + "°" : "limited"}${rPain ? " with pain" : rTight ? " with tightness" : ""}`); return; }
         // "full range of motion, no limited range of motion" said outright — this is a genuine,
         // complete finding on its own; it must not fall through and leave the box's own unfilled
         // default text (which reads "Limited ..." until a real chip/line replaces it) looking like
         // an actual finding.
         const full = /\b(full|all the way|no problem|fine|okay|ok|good|normal)\b|เต็มที่|ได้สุด|ปกติ|เต็มที|เต็ม/.test(reply) || /\b(full|normal)\b|เต็ม|ปกติ/.test(followHead);
-        if (full) { push("objective", heading, `${nmL}: full ROM${rPain ? " with pain at end range" : rTight ? " with tightness at end range" : ""}`); return; }
+        // from a recording, "it's okay" is only the patient saying it does not hurt — not a measured range
+        if (full && convo && !rPain && !rTight && !/\b(full|normal)\b/.test(followHead)) { push("objective", heading, `${nmL}: no pain`); return; }
+        if (full && !(convo && rPain)) { push("objective", heading, `${nmL}: full ROM${rPain ? " with pain at end range" : rTight ? " with tightness at end range" : ""}`); return; }
       }
       if (layMove && c && !/limit|full|เต็ม|จำกัด|ไม่สุด|ได้ไม่|normal|wnl/.test(c)) {
         const sdL = sd; const nmL = nm;
@@ -1081,13 +1197,21 @@ window.DETECT = (function () {
     pick(scan(entries(V.NEURO_PHRASES), low)).forEach((h) => { out.heard.add(h.term); push("objective", "Neurological examination", h.term); });
     if (NEUROCTX.test(low)) pick(scan(entries(V.MYOTOMES), low)).forEach((h) => { if (NEUROCTX.test(ctx(low, h.i, h.len, 40))) { out.heard.add(h.term); push("objective", "Myotome", h.term); } });
 
+    // A recorded session: what the physio says out loud about what the hands feel
+    if (convo) {
+      const cm = /\b(right|left) (?:side|size)[^.?!\n]{0,20}\b(?:tension|tense|tight\w*)\b[^.?!\n]{0,12}more than|\b(?:tense|tight|tension)\b[^.?!\n]{0,8}more than (?:the |your )?(left|right) side/.exec(low);
+      if (cm) { const tenseSide = cm[1] ? (cm[1] === "right" ? "Rt." : "Lt.") : (cm[2] === "left" ? "Rt." : "Lt."); push("objective", "Palpation", `Muscle tension ${tenseSide} more than ${tenseSide === "Rt." ? "Lt." : "Rt."}`); }
+      if (/\bcore(?: muscles?)?,?(?: is| are)? not (?:engag\w+|work\w*|activat\w+)/.test(low)) push("objective", "Muscle power", "Core muscle: poor activation");
+      if (/\b(?:just |only |it'?s )?local(?:ized)?\b[^.?!\n]{0,40}|not radiating/.test(low) && /\bnot radiating|no radiat/.test(low)) push("objective", "Palpation", "Local pain, no radiating");
+    }
+
     // Diagnoses
     const dxSeen = new Set();
     pick(scan(entries(ALL_DX), low)).forEach((h) => {
       const c = ctx(low, h.i, h.len, 80);
       if (GENERIC_DX.has(h.term) && !DXCTX.test(c)) return;
       if (!gated(low, h, R)) return;
-      if (patientSaid(h.i) || isQuestion(qLine(h.i))) return;
+      if (patientSaid(h.i) || (convo ? /\?\s*$/.test(sentenceOf(h.i).trim()) : isQuestion(qLine(h.i)))) return;
       if (HISTORY.test(clause(low, h.i, h.len)) && !/^\s*(analysis|diagnosis|impression|dx)/i.test(speakerLine(low, h.i))) return;
       if (dxSeen.has(h.term)) return; dxSeen.add(h.term);
       out.heard.add(h.term);
@@ -1215,5 +1339,5 @@ window.DETECT = (function () {
     pick(scan(entries(ALL_MUSCLES), low)).forEach((m) => { const regs = MUSCLE_REGION[m.term.toLowerCase()]; if (regs) regs.forEach((r) => out.add(r)); });
     return out;
   }
-  return { run, hits, aliasesOf, regionsOf };
+  return { run, hits, aliasesOf, regionsOf, asConversation };
 })();

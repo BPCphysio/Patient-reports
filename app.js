@@ -286,6 +286,122 @@
     document.querySelectorAll("#builder button.chip[data-field]").forEach((b) => { const inBox = lineInField(b.dataset.field, b.dataset.line); b.classList.toggle("on", !!inBox); b.title = inBox ? "In the box — tap to take it out" : (b.classList.contains("heard") ? "Heard in the transcript" : ""); });
     const painCur = val("Pain scale");
     document.querySelectorAll("#builder button.chip[data-pain]").forEach((b) => b.classList.toggle("on", b.dataset.line === painCur));
+    customSync.forEach((fn) => fn());
+  }
+  const customSync = [];   // pickers below keep their own buttons in step with the boxes; reset by renderBuilder
+
+  // ---------- pickers built from physio feedback (bua, 2026-09-19) ----------
+  // the lines of one heading inside a field (SOAP keeps every Objective heading in one box);
+  // no heading = the whole field
+  function scopeLines(field, heading) {
+    const lines = val(field).split("\n");
+    if (!heading) return { lines, from: 0, to: lines.length };
+    const at = lines.findIndex((l) => l.trim() === heading && !l.startsWith(" "));
+    if (at < 0) return { lines, from: 0, to: 0 };
+    let end = at + 1; while (end < lines.length && lines[end].startsWith("  ")) end++;
+    return { lines, from: at + 1, to: end };
+  }
+  function writeLines(field, lines) { S.fields[field] = lines.join("\n"); updateTa(field); renderOutput(); syncChips(); }
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const valueOf = (l) => (l.indexOf(":") < 0 ? "" : l.slice(l.indexOf(":") + 1).trim());
+  const setValue = (l, v) => { const c = l.indexOf(":"); return (c < 0 ? l.replace(/\s+$/, "") : l.slice(0, c)) + ":" + (v ? " " + v : ""); };
+  const mkChip = (text, cls) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip" + (cls ? " " + cls : ""); b.textContent = text; return b; };
+
+  // Observation, grouped by the view posture is read from (V.OBSERVATION_VIEWS)
+  function observationPicker(b, field, heading, terms) {
+    const left = new Set(terms);
+    Object.entries(V.OBSERVATION_VIEWS || {}).forEach(([view, list]) => {
+      const here = list.filter((t) => left.has(t)); if (!here.length) return;
+      b.appendChild(sub(view)); b.appendChild(chips(here, field, heading)); here.forEach((t) => left.delete(t));
+    });
+    if (left.size) { b.appendChild(sub("Other")); b.appendChild(chips([...left], field, heading)); }
+  }
+
+  // Range of motion: a finding ("full ROM without pain") belongs to a movement. Tapping one
+  // fills every movement line still empty; tap a movement first to set just that one.
+  // (Before: the finding landed as its own line under the movements, and a second tap removed it.)
+  function romPicker(b, field, heading, moves) {
+    let focus = "";
+    const moveRe = (m) => new RegExp("^\\s*" + reEsc(m) + "(?:\\s+(?:Rt\\.|Lt\\.|Both))?\\s*(?::|$)", "i");
+    const lineOf = (m) => { const { lines, from, to } = scopeLines(field, heading); for (let i = from; i < to; i++) if (moveRe(m).test(lines[i])) return i; return -1; };
+    const hint = sub(""); const moveRow = document.createElement("div"); moveRow.className = "chips";
+    const qRow = document.createElement("div"); qRow.className = "chips";
+    const moveBtns = moves.map((m) => {
+      const mb = mkChip(m);
+      mb.onclick = () => {
+        const i = lineOf(m);
+        if (i < 0) { append(field, romLine(m), heading); focus = ""; }   // adding never singles a movement out: "flexion, extension, full ROM" must fill both
+        else if (focus === m) { removeLine(field, scopeLines(field, heading).lines[i].trim()); focus = ""; }
+        else focus = m;
+        renderOutput(); syncChips();
+      };
+      moveRow.appendChild(mb); return [m, mb];
+    });
+    const qBtns = V.ROM_QUALIFIERS.map((q) => {
+      const qb = mkChip(q);
+      qb.onclick = () => {
+        const { lines, from, to } = scopeLines(field, heading);
+        const all = []; for (let i = from; i < to; i++) if (moves.some((m) => moveRe(m).test(lines[i]))) all.push(i);
+        let targets;
+        const fi = focus ? lineOf(focus) : -1;
+        if (fi >= 0) targets = [fi];
+        else { const empty = all.filter((i) => !valueOf(lines[i])); targets = empty.length ? empty : all; }
+        if (!targets.length) {   // no movement in the box: the finding stands on its own, as before
+          const inBox = lineInField(field, q); if (inBox) removeLine(field, inBox); else append(field, q, heading);
+          renderOutput(); syncChips(); return;
+        }
+        const same = targets.every((i) => valueOf(lines[i]) === q);
+        targets.forEach((i) => { lines[i] = setValue(lines[i], same ? "" : q); });
+        focus = "";
+        writeLines(field, lines);
+      };
+      qRow.appendChild(qb); return [q, qb];
+    });
+    const sync = () => {
+      const { lines, from, to } = scopeLines(field, heading); const scope = lines.slice(from, to);
+      if (focus && lineOf(focus) < 0) focus = "";
+      moveBtns.forEach(([m, mb]) => { mb.classList.toggle("on", lineOf(m) >= 0); mb.style.boxShadow = focus === m ? "0 0 0 3px #38C2CD" : ""; });
+      qBtns.forEach(([q, qb]) => qb.classList.toggle("on", scope.some((l) => valueOf(l) === q || l.trim() === q)));
+      hint.textContent = focus ? `${focus} — now tap what you found (or tap it again to remove it)` :"What you found — fills every movement still empty. Tap a movement first to set just that one.";
+    };
+    customSync.push(sync);
+    b.appendChild(moveRow); b.appendChild(hint); b.appendChild(qRow); sync();
+  }
+
+  // Muscle power: grade first, then the muscle, muscles grouped the way the region lists them
+  function musclePowerPicker(b, field, heading) {
+    const groups = profile().muscle_groups.filter((g) => V.MUSCLES[g] && g !== "Ligaments & structures");
+    const grades = V.MMT_GRADES || ["Grade 5/5", "Grade 4/5", "Grade 3/5"];
+    let grade = grades[2] || grades[0], side = S.side && S.side !== "Both" ? S.side : "";
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    const lineRe = (m) => new RegExp("^\\s*" + reEsc(m) + "(?:\\s+(?:Rt\\.|Lt\\.|Both))?\\s*:", "i");
+    const gradeRow = document.createElement("div"); gradeRow.className = "chips";
+    grades.forEach((g) => { const gb = mkChip(g, "sel" + (g === grade ? " on" : "")); gb.onclick = () => { grade = g; gradeRow.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === gb)); hint.textContent = hintText(); }; gradeRow.appendChild(gb); });
+    const hintText = () => `${grade}${side ? " · " + side : ""} — for which muscle?`;
+    const hint = sub(hintText());
+    const sideRow = document.createElement("div"); sideRow.className = "row3";
+    const sideSel = selectEl(["", ...V.SIDES], (e) => { side = e.target.value; hint.textContent = hintText(); }); sideSel.value = side; sideRow.appendChild(sideSel);
+    b.appendChild(gradeRow); b.appendChild(sideRow); b.appendChild(hint);
+    const btns = [];
+    groups.forEach((g) => {
+      b.appendChild(sub(g)); const row = document.createElement("div"); row.className = "chips";
+      [...new Set(V.MUSCLES[g])].forEach((m) => {
+        const name = cap(m); const mb = mkChip(name);
+        mb.onclick = () => {
+          const { lines, from, to } = scopeLines(field, heading);
+          const want = `${name}${side ? " " + side : ""}`;
+          let at = -1; for (let i = from; i < to; i++) if (new RegExp("^\\s*" + reEsc(want) + "\\s*:", "i").test(lines[i])) { at = i; break; }
+          if (at < 0) { append(field, `${want}: ${grade}`, heading); renderOutput(); syncChips(); return; }
+          if (valueOf(lines[at]) === grade) { removeLine(field, lines[at].trim()); renderOutput(); syncChips(); return; }
+          lines[at] = setValue(lines[at], grade); writeLines(field, lines);
+        };
+        row.appendChild(mb); btns.push([name, mb]);
+      });
+      b.appendChild(row);
+    });
+    customSync.push(() => { const { lines, from, to } = scopeLines(field, heading); const scope = lines.slice(from, to); btns.forEach(([name, mb]) => { const l = scope.find((x) => lineRe(name).test(x)); mb.classList.toggle("on", !!l); mb.title = l ? l.trim() : ""; }); });
+    b.appendChild(sub("Overall")); b.appendChild(chips(V.STRENGTH.filter((s) => !/^Grade \d/.test(s)), field, heading));
+    syncChips();
   }
   function chips(terms, field, heading, transform) {
     const wrap = document.createElement("div"); wrap.className = "chips";
@@ -661,7 +777,7 @@
   function objectiveExtras(host, field) {
     const region = S.region, P = profile();
     let [d, b] = details("Observation");
-    b.appendChild(chips([...P.observation, ...(V.OBSERVATION_BY_REGION[region] || [])], field, "Observation")); showAllLink(b); host.appendChild(d);
+    observationPicker(b, field, "Observation", [...P.observation, ...(V.OBSERVATION_BY_REGION[region] || [])]); showAllLink(b); host.appendChild(d);
 
     [d, b] = details(isGeneral() ? "Palpation — pick the finding, then the muscle" : `Palpation — pick the finding, then the muscle (${S.region.toLowerCase()})`);
     const groups = P.muscle_groups.filter((g) => V.MUSCLES[g]);
@@ -683,15 +799,14 @@
     [d, b] = details("Range of motion");
     const moves = V.ROM_BY_REGION[region] || V.ROM_GENERAL;
     const r2 = document.createElement("div"); r2.className = "row2";
-    const c1 = document.createElement("div"); c1.appendChild(sub("Active")); c1.appendChild(chips(moves, field, "Active range of motions", romLine));
-    const c2 = document.createElement("div"); c2.appendChild(sub("Passive")); c2.appendChild(chips(moves, field, "Passive range of motions", romLine));
+    const c1 = document.createElement("div"); c1.appendChild(sub("Active")); romPicker(c1, field, "Active range of motions", moves);
+    const c2 = document.createElement("div"); c2.appendChild(sub("Passive")); romPicker(c2, field, "Passive range of motions", moves);
     r2.appendChild(c1); r2.appendChild(c2); b.appendChild(r2);
-    b.appendChild(sub("In words instead")); b.appendChild(chips(V.ROM_QUALIFIERS, field, "Active range of motions"));
     if (V.ACCESSORY_BY_REGION[region]) { b.appendChild(sub("Accessory movement")); b.appendChild(chips(V.ACCESSORY_BY_REGION[region], field, "Accessory movement")); }
     host.appendChild(d);
 
     [d, b] = details("Muscle power & function");
-    b.appendChild(chips(V.STRENGTH, field, "Muscle power"));
+    musclePowerPicker(b, field, "Muscle power");
     b.appendChild(sub("Dynamometer force")); b.appendChild(chips(moves, field, "Muscle power", forceLine));
     b.appendChild(sub("Functional tests")); b.appendChild(chips([...new Set([...P.functional, ...(V.FUNCTIONAL_BY_REGION[region] || [])])], field, "Functional test"));
     if (P.functional.includes("Overhead squat") || isGeneral()) { b.appendChild(sub("Overhead squat")); b.appendChild(chips(V.OVERHEAD_SQUAT, field, "Functional test")); }
@@ -833,7 +948,7 @@
   };
 
   function renderBuilder() {
-    const host = $("builder"); host.innerHTML = "";
+    const host = $("builder"); host.innerHTML = ""; customSync.length = 0;
     setTimeout(renderSuggest, 0);
     const fmt = S.format;
     if (fmt === "SOAP with treatment") {
@@ -855,10 +970,14 @@
       if (f === "Active range of motions" || f === "Passive range of motions") {
         const moves = V.ROM_BY_REGION[S.region] || V.ROM_GENERAL;
         const [d, b] = details("Options for " + f);
-        b.appendChild(chips(moves, f, "", romLine));
-        b.appendChild(sub("In words instead")); b.appendChild(chips(V.ROM_QUALIFIERS, f, ""));
+        romPicker(b, f, "", moves);
         if (f === "Active range of motions" && V.ACCESSORY_BY_REGION[S.region]) { b.appendChild(sub("Accessory movement")); b.appendChild(chips(V.ACCESSORY_BY_REGION[S.region], f, "")); }
         host.appendChild(d);
+      } else if (f === "Observation") {
+        const [d, b] = details("Options for " + f);
+        observationPicker(b, f, "", [...profile().observation, ...(V.OBSERVATION_BY_REGION[S.region] || [])]); host.appendChild(d);
+      } else if (f === "Muscle power") {
+        const [d, b] = details("Options for " + f); musclePowerPicker(b, f, ""); host.appendChild(d);
       } else if (CHIPS_FOR[f]) { const [d, b] = details("Options for " + f); b.appendChild(chips(CHIPS_FOR[f](), f, "")); host.appendChild(d); }
       if (f === "Treatment" || f === "Treatments" || f === "Physiotherapy Treatments") treatmentExtras(host, f);
     });
