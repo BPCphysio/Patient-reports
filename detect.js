@@ -796,7 +796,7 @@ window.DETECT = (function () {
     // Present history — how long it has been going on, and what started it. Both are copied
     // in the physio's own words; nothing is inferred.
     {
-      const NUM_EN = "(?:\\d+(?:\\.\\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|twelve|couple of|few|several|many)";
+      const NUM_EN = "(?:\\d+(?:\\.\\d+)?(?:\\s*(?:-|–|to)\\s*\\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|twelve|couple of|few|several|many)";
       const DUR_EN = new RegExp("\\b(?:(?:for|since|about|around|approximately|over|past|last|nearly|almost)\\s+)*(" + NUM_EN + "\\s+(?:days?|weeks?|wks?|months?|years?|yrs?)(?:\\s+ago)?)\\b", "i");
       const DUR_TH = /(?:มา|ประมาณ|มาประมาณ|เป็นมา|ราวๆ|ราว)?\s*((?:\d+|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|หลาย|สองสาม)\s*(?:วัน|สัปดาห์|อาทิตย์|เดือน|ปี)(?:แล้ว|ก่อน|ที่แล้ว)?)/;
       const MECH_EN = /\b(?:after|since|from|following|when|while)\s+((?:[^.,;\n]{0,40}?)\b(?:fell|fall|falling|slipped|slip|tripped|trip|twisted|twist|rolled|landed|accident|collision|crash|lifting|lifted|carrying|running|jogging|playing|training|exercise|exercising|gym|football|soccer|basketball|badminton|tennis|golf|volleyball|marathon|hiking|cycling|surgery|operation|injection)\b[^.,;\n]{0,40})/i;

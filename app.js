@@ -1195,8 +1195,8 @@ RULES
 - Read only what was written, drawn or ticked by hand. Never copy the printed questions, labels or instructions.
 - USE the printed question to understand what each handwritten answer means, then write only the answer with a short label of your own: "Pain area: neck", "Duration: 1 week", "Treated before: yes - ultrasound", "Underlying disease: none" (a dash or N/A means none). A mark on the body diagram becomes "Pain marked: back of upper neck". Pain area and duration belong in chief_complaint and present_history.
 - Do NOT return the patient's name, nickname, phone, e-mail, address, date of birth, age, height, weight, emergency contact, insurance, medical-certificate or "how did you hear about us" answers, massage pressure, the Bangkok questions, or the therapist's signature.
-- Keep every word in the language it was written in. Do not translate, do not correct, do not expand abbreviations. Copy every number, unit, side (Rt/Lt/R/L/ขวา/ซ้าย) and symbol exactly.
-- A word you cannot read becomes [?]. Never guess a word or a number and never add anything that is not on the paper.
+- Write every fact as ONE short, clear chart line in English that a colleague can understand at a glance (translate Thai into plain English; keep standard abbreviations such as Rt, Lt, ROM, UT, ITB, MRI). Copy every number, unit and side exactly as written.
+- If you cannot read a phrase well enough to be sure what it means, LEAVE IT OUT. Never output scraps, half words, single letters, a label with nothing after it ("ass:", "art,") or text that does not make sense. [?] is only for one unreadable word inside a line that is otherwise clear. Never guess a word or a number and never add anything that is not on the paper.
 - Read slowly, stroke by stroke, the way a colleague deciphers a doctor's handwriting. This is a physiotherapy clinic, so a scrawled word is most likely one of these (accept one ONLY when the pen strokes really fit it): trigger point, tenderness, tightness, tight, spasm, swelling, muscle guarding, weakness, weak, dull pain, sharp pain, radiating, numbness, local pain, full ROM, limit, flexion, extension, lateral flexion, rotation, abduction, adduction, IR, ER, upper trapezius (UT), levator, scalene, pectoral, rhomboid, lower trapezius, QL, paraspinal, gluteus, piriformis, hamstring, quadriceps, VMO, ITB, gastrocnemius, soleus, peroneus, PFPS, ITB syndrome, MPS, HNP, L4-L5, L5-S1, SLR, FABER, Ober, Thomas, McMurray, drawer, Adson, Spurling, single leg, heel raise, knee to wall, squat, run, gym, yoga, pilates, ultrasound, MRI, X-ray, BP, HR. Thai words that are common here: ปวด, ตึง, ร้าว, ชา, บวม, คอ, บ่า, ไหล่, สะบัก, หลัง, เอว, สะโพก, เข่า, น่อง, ข้อเท้า, ซ้าย, ขวา, เดือน, สัปดาห์, ปี, วัน, ผ่าตัด, ล้ม, เคย, ไม่เคย, กายภาพ, นวด, ทำงาน, นั่งนาน, ยกของ, วิ่ง.
 - The chief complaint must come from words that are actually written. NEVER make one up from the body diagram or from the rest of the page; if the complaint is unreadable write what you can and [?] for the rest.
 - Questions the physio jotted down as a reminder to ask ("describe about your pain?", "how many scale 0-10?") are NOT findings: leave them out.
@@ -1205,10 +1205,10 @@ RULES
 - Marks on the body diagram: describe where ("X at Rt. lateral knee", "circle around upper back") together with any words written beside them.
 
 HOW TO SORT (examples of shorthand)
-- chief_complaint: why the patient came, in the patient's or the physio's words; the pain area.
-- present_history: how long, how it started, what makes it worse or better, sport / work / training load ("run 3-4 d/wk 15 km", "DL 40 kg 10/3", "B-S 40 10/3").
-- past_history: underlying disease, earlier treatment for this problem (and what / where), surgery, accidents, regular medicine, old injuries, imaging results ("X-ray ปกติ", "MRI L5-S1").
-- pain_score: pain ratings such as "6/10", "rest 2/10", "VAS 5/10" (keep any word that says when).
+- chief_complaint: ONLY the main problem, in one or two lines: where it hurts and for how long ("Rt hip pain, 4-5 years"; "Low back pain, a couple of weeks"). Nothing else goes here.
+- present_history: how this episode behaves: what makes it worse or better (stairs, sitting, walking, running), the quality of the pain (dull, tense, sharp, radiating or local), cause unknown, sport / work / training load ("run 3-4 d/wk 15 km", "DL 40 kg 10/3").
+- past_history: anything that happened BEFORE: accidents and old injuries with when ("Ski accident 4 years ago"), surgery or "no surgery", earlier treatment for this problem (massage, physiotherapy, doctor), underlying disease, regular medicine, imaging results ("X-ray normal", "MRI L5-S1").
+- pain_score: ONLY if a rating out of ten is actually handwritten ("6/10", "rest 2/10"). A reminder such as "scale 0-10?" is not a score. If no score is written return "".
 - observation: posture, alignment, swelling, gait, what the physio saw.
 - palpation: tenderness, tightness, trigger points, spasm, temperature, muscles listed with a finding, circumference measurements.
 - active_rom / passive_rom: movements with degrees, "full", "limit by ...", F / E / Lat flex / Rot with numbers. If it does not say passive, it is active.
@@ -1255,10 +1255,12 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   async function askRelay(b64) {
     let res;
     // text/plain keeps this a "simple" request: Apps Script web apps do not answer CORS preflights
-    try { res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ image: b64, prompt: AI_PROMPT }), redirect: "follow" }); }
+    try { res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ image: b64, prompt: AI_PROMPT, strict: true }), redirect: "follow" }); }
     catch { throw new Error("Could not reach the handwriting reader — check the internet connection"); }
     if (!res.ok) throw new Error("The handwriting reader answered with an error (" + res.status + ")");
     let j; try { j = await res.json(); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
+    // the good free model is sometimes "busy"; the weak one is never used for handwriting, so say so and let the physio try again
+    if (!j.text && (j.busy || /\b(503|429)\b|high demand|quota/i.test(String(j.error || "")))) { const e = new Error("Google's handwriting reader is busy right now — tap Photo of chart again in a minute."); e.busy = true; throw e; }
     if (j.error || !j.text) throw new Error("The handwriting reader did not answer (" + String(j.error || "empty").slice(0, 180) + ")");
     try { return JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
   }
@@ -1292,19 +1294,39 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   const PHOTO_PII = /(?:\+?\d[\d\s-]{7,}\d)|[\w.+-]+@[\w-]+\.[\w.]+|^\s*(?:k\.|khun|คุณ|mr\.?|mrs\.?|ms\.?|miss)\s*\S+\s*$/i;
   const PHOTO_FILLER = /^(?:observation|palpation|range of motion|rom|muscle power|special test|posture|postural\/alignment|work\/activity|activity|sitting position|past history|chief complaint)\s*(?:notes?)?\s*:\s*/i;
   const PHOTO_ROM = /^(?:\(?[LR]\)?\s*)?(?:F|E|Flex\w*|Ext\w*|Lat\.?\s*\w*|Rot\w*|Abd\w*|Add\w*|IR|ER)\b[^A-Za-zก-๙]{0,4}\d/;
+  const PHOTO_ADMIN = /insurance|ประกัน|certificate|ใบรับรอง|instagram|facebook|website|chatgpt|banner|friend referred|ผู้แนะนำ|massage pressure|\b(?:hard|medium|soft)\b.*\b(?:hard|medium|soft)\b|live in bangkok|staying in bangkok|emergency|date of birth|e-?mail|height|weight|therapist'?s name/i;
+  const PHOTO_PAST = /accident|อุบัติเหตุ|surger|operat|ผ่าตัด|\bago\b|ปีก่อน|ปีที่แล้ว|\bmri\b|x-?ray|ultrasound scan|\bct\b|fracture|กระดูกหัก|previous|treated before|เคยรักษา|เคยทำกายภาพ|underlying|โรคประจำตัว|medication|medicine|painkiller/i;
+  const PHOTO_BEHAVE = /stairs?|บันได|sitting|นั่ง|walking|เดิน|running|วิ่ง|standing|ยืน|worse|better|aggravat|eas(?:e|ing)|\brest\b|cause unknown|don'?t know (?:the )?cause|ไม่รู้สาเหตุ|\btense\b|\btight\b|\bdull\b|\bsharp\b|radiat|numb|ชา|ร้าว|morning|night|กลางคืน/i;
   function cleanPhotoReading(r) {
-    const o = {}; const moved = { active_rom: [], pain_score: [] };
+    const o = {}; const moved = { active_rom: [], pain_score: [], past_history: [], present_history: [] };
     Object.keys(r || {}).forEach((k) => {
       const lines = String(r[k] == null ? "" : r[k]).split(/\n+/).map((l) => l.replace(PHOTO_FILLER, "").trim())
-        .filter((l) => l && !PHOTO_PII.test(l) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")));
+        .map((l) => l.replace(/^[-–•·*]\s*(?!ve\b)/i, "").replace(/\s*[;,]\s*$/, "").trim())
+        .filter((l) => l && !PHOTO_PII.test(l) && !PHOTO_ADMIN.test(l) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a|no|yes|now)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")))
+        // a reminder the physio jotted down ("describe about your pain?") is not a finding; a scrap is not a line
+        .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= 4 && (l.match(/\[\?\]/g) || []).length <= 1);
       o[k] = lines.filter((l) => {
         if (k !== "active_rom" && k !== "passive_rom" && PHOTO_ROM.test(l)) { moved.active_rom.push(l); return false; }
         if (k !== "pain_score" && /^\d{1,2}\s*\/\s*10$/.test(l)) { moved.pain_score.push(l); return false; }
+        if (k === "pain_score" && !/\d{1,2}\s*\/\s*10/.test(l)) return false;   // only a score really written as n/10
+        // the chief complaint is the main problem only: history and behaviour have their own boxes
+        if (k === "chief_complaint" && PHOTO_PAST.test(l)) { moved.past_history.push(l); return false; }
+        if (k === "chief_complaint" && PHOTO_BEHAVE.test(l) && !/^pain area/i.test(l)) { moved.present_history.push(l); return false; }
+        if (k === "present_history" && PHOTO_PAST.test(l)) { moved.past_history.push(l); return false; }
+        // a chief complaint names a body part or a pain; anything else the model left there is a note about the episode
+        if (k === "chief_complaint" && !/pain|ปวด|เจ็บ|ache|sore|stiff|ตึง|numb|ชา|injur|sprain|strain|hip|knee|back|neck|shoulder|ankle|foot|heel|elbow|wrist|hand|finger|leg|arm|thigh|calf|shin|spine|head|jaw|rib|chest|groin|glute|hamstring|คอ|บ่า|ไหล่|สะบัก|หลัง|เอว|เข่า|สะโพก|ข้อเท้า|เท้า|ขา|แขน|ศอก|ข้อมือ|น่อง|area/i.test(l)) { moved.present_history.push(l); return false; }
+        // one unreadable word in a line with almost nothing else says nothing
+        if (/\[\?\]/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length < 10) return false;
+        if (k === "other") return false;                                           // what could not be placed is not shown at all
         return true;
       });
     });
     o.active_rom = [...(o.active_rom || []), ...moved.active_rom];
     o.pain_score = [...(o.pain_score || []), ...moved.pain_score];
+    o.past_history = [...(o.past_history || []), ...moved.past_history];
+    o.present_history = [...(o.present_history || []), ...moved.present_history];
+    // more than two lines of "chief complaint" means the model dumped its notes there: the rest is history of this episode
+    if ((o.chief_complaint || []).length > 2) { o.present_history = [...o.chief_complaint.slice(2), ...o.present_history]; o.chief_complaint = o.chief_complaint.slice(0, 2); }
     // one plain score is the pain scale; several are kept as written
     const out = {}; Object.keys(o).forEach((k) => { out[k] = [...new Set(o[k])].join("\n"); });
     return out;
@@ -1324,7 +1346,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     n += put("subjective", "PresentHistory", str("present_history"));
     n += put("subjective", "PastHistory", str("past_history"));
     // a single plain score goes on the New patient's record pain scale; anything richer ("rest 2/10, run 6/10") is kept as written
-    const ps = str("pain_score"), pm = /^(?:vas\s*)?(\d{1,2})(?:\s*\/\s*10)?$/i.exec(ps);
+    const ps = str("pain_score"), pm = /^(?:vas\s*)?(\d{1,2})\s*\/\s*10$/i.exec(ps);
     if (ps) {
       if (pm && +pm[1] <= 10 && S.format === "New patient's record") { S.fields["Pain scale"] = pm[1]; n++; }
       else if (pm && +pm[1] <= 10) n += put("objective", "", `VAS ${pm[1]}/10`);
@@ -1355,7 +1377,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         // the pain area and the complaint also go to the notes box, so the body region and the side are picked up
         // the complaint goes to the notes box too, so the body region and the side are picked up; so does
         // anything the reader could not place — nothing that was read is thrown away
-        const hintText = [r.chief_complaint && "Chief complaint: " + String(r.chief_complaint).replace(/\n+/g, "; "), r.other && "Not placed: " + String(r.other).replace(/\n+/g, "; ")].filter(Boolean).join("\n");
+        const hintText = r.chief_complaint ? "Chief complaint: " + String(r.chief_complaint).split(/\n+/).slice(0, 2).join("; ") : "";
         if (hintText) { const ta = $("transcript"); ta.value = (ta.value.replace(/\s+$/, "") ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + "[From photo]\n" + hintText; ta.dispatchEvent(new Event("input")); if (!$("trbox").open) $("trbox").open = true; }
       }
       // a test the physio wrote by hand ("-ve McMurray") makes the pre-listed empty line for it pointless
@@ -1372,6 +1394,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
       if (!$("trbox").open) $("trbox").open = true;
       const why = err.message || "The handwriting reader failed";
       toast(why);
+      if (err.busy) { ocrState(why); return; }   // the built-in reader cannot read handwriting: nothing useful to fall back to
       await readPhotos(files, true);
       ocrState(why + " — the photo was read with the built-in reader instead (printed text only).");
       return;
