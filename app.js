@@ -1174,6 +1174,12 @@
   // kept in this browser's storage) the photo is sent to Google to be read; without one the
   // on-device reader above is used and nothing leaves the device. The page says which is in force.
   const AI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+  // Owner decision 2026-09-19: no physio ever sets anything up. The key cannot sit in these public
+  // files (Google switches off keys it finds in public code), so it lives in ONE hidden place: a free
+  // Google Apps Script web app under the clinic's own Google account (Downloads/BPC-handwriting-relay/
+  // Code.gs, key in its Script properties). The page posts the photo there and gets the reading back.
+  // The address below is not a secret. While it is empty, the per-device key box is the fallback.
+  const AI_RELAY_URL = "https://script.google.com/macros/s/AKfycbw2r3bTJBpzAskXxN-aKSK2YsbjWoWpD9pz7bXVFgJ6hcmieDYfd_lGSDs5RQqH1E0/exec";
   const AI_KEY_SLOT = "bpc.aiReaderKey";
   const aiKey = () => { try { return (localStorage.getItem(AI_KEY_SLOT) || "").trim(); } catch { return ""; } };
   // The four real charts the owner supplied (2026-09-19) show physios do NOT keep to the printed
@@ -1191,6 +1197,10 @@ RULES
 - Do NOT return the patient's name, nickname, phone, e-mail, address, date of birth, age, height, weight, emergency contact, insurance, medical-certificate or "how did you hear about us" answers, massage pressure, the Bangkok questions, or the therapist's signature.
 - Keep every word in the language it was written in. Do not translate, do not correct, do not expand abbreviations. Copy every number, unit, side (Rt/Lt/R/L/ขวา/ซ้าย) and symbol exactly.
 - A word you cannot read becomes [?]. Never guess a word or a number and never add anything that is not on the paper.
+- Read slowly, stroke by stroke, the way a colleague deciphers a doctor's handwriting. This is a physiotherapy clinic, so a scrawled word is most likely one of these (accept one ONLY when the pen strokes really fit it): trigger point, tenderness, tightness, tight, spasm, swelling, muscle guarding, weakness, weak, dull pain, sharp pain, radiating, numbness, local pain, full ROM, limit, flexion, extension, lateral flexion, rotation, abduction, adduction, IR, ER, upper trapezius (UT), levator, scalene, pectoral, rhomboid, lower trapezius, QL, paraspinal, gluteus, piriformis, hamstring, quadriceps, VMO, ITB, gastrocnemius, soleus, peroneus, PFPS, ITB syndrome, MPS, HNP, L4-L5, L5-S1, SLR, FABER, Ober, Thomas, McMurray, drawer, Adson, Spurling, single leg, heel raise, knee to wall, squat, run, gym, yoga, pilates, ultrasound, MRI, X-ray, BP, HR. Thai words that are common here: ปวด, ตึง, ร้าว, ชา, บวม, คอ, บ่า, ไหล่, สะบัก, หลัง, เอว, สะโพก, เข่า, น่อง, ข้อเท้า, ซ้าย, ขวา, เดือน, สัปดาห์, ปี, วัน, ผ่าตัด, ล้ม, เคย, ไม่เคย, กายภาพ, นวด, ทำงาน, นั่งนาน, ยกของ, วิ่ง.
+- The chief complaint must come from words that are actually written. NEVER make one up from the body diagram or from the rest of the page; if the complaint is unreadable write what you can and [?] for the rest.
+- Questions the physio jotted down as a reminder to ask ("describe about your pain?", "how many scale 0-10?") are NOT findings: leave them out.
+- Vital signs (BP 122/70, HR 68) go in observation. Medical conditions the patient lists (e.g. rheumatoid, high cholesterol) go in past_history as "Underlying disease: ...".
 - One finding per line. Keep things that were written together on one line ("F 30 (40)", "DL: 40 kg 10/3").
 - Marks on the body diagram: describe where ("X at Rt. lateral knee", "circle around upper back") together with any words written beside them.
 
@@ -1242,7 +1252,18 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     aiModelList = [...new Set([...names.slice(0, 5), ...AI_MODELS, "gemini-2.5-flash-lite"])];
     return aiModelList;
   }
+  async function askRelay(b64) {
+    let res;
+    // text/plain keeps this a "simple" request: Apps Script web apps do not answer CORS preflights
+    try { res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ image: b64, prompt: AI_PROMPT }), redirect: "follow" }); }
+    catch { throw new Error("Could not reach the handwriting reader — check the internet connection"); }
+    if (!res.ok) throw new Error("The handwriting reader answered with an error (" + res.status + ")");
+    let j; try { j = await res.json(); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
+    if (j.error || !j.text) throw new Error("The handwriting reader did not answer (" + String(j.error || "empty").slice(0, 180) + ")");
+    try { return JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
+  }
   async function askGemini(b64) {
+    if (AI_RELAY_URL) return askRelay(b64);
     const body = JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: "image/jpeg", data: b64 } }, { text: AI_PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } });
     let lastMsg = "";
     const models = await aiModels();
@@ -1265,7 +1286,31 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     throw new Error("The handwriting reader did not answer (" + (lastMsg || "no model available") + ")");
   }
   // What was read goes straight into the boxes, word for word; nothing is interpreted here.
+  // Whatever the model returns is cleaned HERE, by rule, before it touches a box — the weaker free
+  // model ignores parts of its instructions (2026-09-19: it copied a nickname and a phone number, filed
+  // "F 30 (40)" under Palpation and padded lines with labels of its own).
+  const PHOTO_PII = /(?:\+?\d[\d\s-]{7,}\d)|[\w.+-]+@[\w-]+\.[\w.]+|^\s*(?:k\.|khun|คุณ|mr\.?|mrs\.?|ms\.?|miss)\s*\S+\s*$/i;
+  const PHOTO_FILLER = /^(?:observation|palpation|range of motion|rom|muscle power|special test|posture|postural\/alignment|work\/activity|activity|sitting position|past history|chief complaint)\s*(?:notes?)?\s*:\s*/i;
+  const PHOTO_ROM = /^(?:\(?[LR]\)?\s*)?(?:F|E|Flex\w*|Ext\w*|Lat\.?\s*\w*|Rot\w*|Abd\w*|Add\w*|IR|ER)\b[^A-Za-zก-๙]{0,4}\d/;
+  function cleanPhotoReading(r) {
+    const o = {}; const moved = { active_rom: [], pain_score: [] };
+    Object.keys(r || {}).forEach((k) => {
+      const lines = String(r[k] == null ? "" : r[k]).split(/\n+/).map((l) => l.replace(PHOTO_FILLER, "").trim())
+        .filter((l) => l && !PHOTO_PII.test(l) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")));
+      o[k] = lines.filter((l) => {
+        if (k !== "active_rom" && k !== "passive_rom" && PHOTO_ROM.test(l)) { moved.active_rom.push(l); return false; }
+        if (k !== "pain_score" && /^\d{1,2}\s*\/\s*10$/.test(l)) { moved.pain_score.push(l); return false; }
+        return true;
+      });
+    });
+    o.active_rom = [...(o.active_rom || []), ...moved.active_rom];
+    o.pain_score = [...(o.pain_score || []), ...moved.pain_score];
+    // one plain score is the pain scale; several are kept as written
+    const out = {}; Object.keys(o).forEach((k) => { out[k] = [...new Set(o[k])].join("\n"); });
+    return out;
+  }
   function placePhotoFields(r) {
+    r = cleanPhotoReading(r);
     const str = (k) => String(r[k] == null ? "" : r[k]).trim();
     const put = (sec, heading, text) => {
       if (!text) return 0;
@@ -1294,7 +1339,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     n += put("objective", "Functional test", str("functional_test"));
     n += put("objective", "Neurological examination", str("neurological"));
     n += put("analysis", "", str("diagnosis"));
-    n += put("plan", "", str("plan")) || (S.format === "New patient's record" && str("plan") ? put("treatment", "", str("plan").split(/\n+/).map((l) => "Plan: " + l).join("\n")) : 0);
+    n += put("plan", "", str("plan")) || (S.format === "New patient's record" && str("plan") ? put("treatment", "", str("plan").split(/\n+/).map((l) => (/^plan\b/i.test(l) ? l : "Plan: " + l)).join("\n")) : 0);
     n += put("treatment", "", str("treatment"));
     n += put("exercise", "Exercise", str("exercise"));
     return n;
@@ -1305,7 +1350,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
       let placed = 0;
       for (let n = 0; n < files.length; n++) {
         ocrState(files.length > 1 ? `Reading the handwriting — photo ${n + 1} of ${files.length}…` : "Reading the handwriting…");
-        const r = await askGemini(await photoToJpegBase64(files[n]));
+        const r = cleanPhotoReading(await askGemini(await photoToJpegBase64(files[n])));
         placed += placePhotoFields(r);
         // the pain area and the complaint also go to the notes box, so the body region and the side are picked up
         // the complaint goes to the notes box too, so the body region and the side are picked up; so does
@@ -1317,7 +1362,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
       const tidyTests = () => { const t = target("objective", "Special test");
       if (!(t && t[0] && S.prefilled)) return;
         const written = val(t[0]).split("\n").map((l) => l.trim().toLowerCase()).filter((l) => l && !BLANK_TEST.test(l));
-        val(t[0]).split("\n").forEach((l) => { const tl = l.trim(); if (!BLANK_TEST.test(tl) || !S.prefilled.has(testName(tl))) return; const key = testName(tl).toLowerCase().split(/[\s(]/)[0]; if (key.length >= 4 && written.some((w) => w.includes(key))) removeLine(t[0], tl); });
+        val(t[0]).split("\n").forEach((l) => { const tl = l.trim(); if (!BLANK_TEST.test(tl) || !S.prefilled.has(testName(tl))) return; const key = testName(tl).toLowerCase().split(/[\s('-]/)[0]; if (key.length >= 4 && written.some((w) => w.includes(key))) removeLine(t[0], tl); });
       }; tidyTests(); setTimeout(() => { tidyTests(); renderOutput(); }, 1600);   // again once the region's tests have been pre-listed
       renderBuilder(); renderOutput();
       ocrState(placed ? `Photo read — ${placed} line${placed === 1 ? "" : "s"} of handwriting put into the boxes below. Check every word against the paper; [?] marks a word that could not be read.` : "Google's reader found no handwriting it could read in that photo — try a straighter, brighter shot.");
@@ -1333,7 +1378,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     } finally { btn.classList.remove("busy"); }
   }
   function paintAiBox() {
-    const on = !!aiKey();
+    const on = !!(AI_RELAY_URL || aiKey());
     const st = $("aistate"); if (st) st.textContent = on ? "On — a reader key is saved on this device. Handwriting on chart photos is read." : "Off — no key on this device. Only printed text is read from photos.";
     // owner decision 2026-09-19: no notice per photo. The "never uploaded" sentence is only shown while it is true.
     const pv = $("photoprivacy"); if (pv) pv.textContent = on ? "" : "Photos are read on this device and never uploaded.";
@@ -1342,14 +1387,15 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     const box = $("aibox"); if (box) box.hidden = on;
   }
   function initAiBox() {
-    if (!$("aibox")) return;
+    paintAiBox();
+    if (!$("aibox")) return;   // the set-up box was removed from the page on the owner's instruction (2026-09-19)
     $("aikeysave").onclick = () => { const v = $("aikey").value.trim(); if (!v) { toast("Paste the key first"); return; } try { localStorage.setItem(AI_KEY_SLOT, v); } catch { toast("This browser would not save the key (private window?)"); return; } $("aikey").value = ""; paintAiBox(); toast("Handwriting reader is on for this device"); };
     $("aikeyremove").onclick = () => { try { localStorage.removeItem(AI_KEY_SLOT); } catch {} paintAiBox(); toast("Handwriting reader is off for this device"); };
     paintAiBox();
   }
 
   async function readPhotos(files, builtInOnly) {
-    if (aiKey() && !builtInOnly) return readPhotosAI(files);
+    if ((AI_RELAY_URL || aiKey()) && !builtInOnly) return readPhotosAI(files);
     const btn = $("photobtn"); btn.classList.add("busy");
     try {
       const w = await getWorker();
