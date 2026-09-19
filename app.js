@@ -635,6 +635,12 @@
     const condTests = hit && hit[1].t ? hit[1].t.map(fix).filter((n) => known.has(n) && (general || P.tests.includes(n))) : [];
     if (general && !condTests.length) return;
     const testList = general ? condTests : [...condTests, ...P.tests.filter((n) => !condTests.includes(n))];
+    // the region has just become known (or changed): tests this function listed earlier that are still
+    // empty and do not belong to this region come back out — "Thomas test:" has no place in a neck note
+    if (S.prefilled && S.prefilled.size) {
+      const keep = new Set(testList);
+      val(field).split("\n").forEach((l) => { const tl = l.trim(), n = testName(tl); if (BLANK_TEST.test(tl) && S.prefilled.has(n) && !keep.has(n)) { removeLine(field, tl); S.prefilled.delete(n); } });
+    }
     const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /(\+ve|-ve|:)\s*$/.test(l)).map(testName));
     S.prefilled = S.prefilled || new Set();
     testList.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}:`, heading, true); S.prefilled.add(name); });
@@ -1157,7 +1163,151 @@
     }
     return out.join("\n");
   }
+  // ---------- handwriting: the photo is read by Google's Gemini (owner decision 2026-09-19) ----------
+  // Tesseract cannot read handwriting, and the form is mostly handwritten Thai. With a Gemini API
+  // key saved on this device (never in the repo — it is typed into the page once per device and
+  // kept in this browser's storage) the photo is sent to Google to be read; without one the
+  // on-device reader above is used and nothing leaves the device. The page says which is in force.
+  const AI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+  const AI_KEY_SLOT = "bpc.aiReaderKey";
+  const aiKey = () => { try { return (localStorage.getItem(AI_KEY_SLOT) || "").trim(); } catch { return ""; } };
+  // The four real charts the owner supplied (2026-09-19) show physios do NOT keep to the printed
+  // lines: ROM numbers circled beside the body diagram, squat/deadlift loads in a bubble, knee-to-wall
+  // and heel-raise counts under the form, palpation written in the Muscle power area, a plan list in
+  // the bottom corner. So the reader sorts every piece of handwriting by what it MEANS, never by
+  // where it sits on the page.
+  const AI_PROMPT = `This is a photo of a Bangkok Physiotherapy Center "New Patient Registration Form" used as a working sheet. The patient fills in the left side. The physiotherapist then writes notes ANYWHERE on the page: inside the "PT assessment only" column, across the printed labels, around the body diagram, in the margins, in circles and bubbles, and in the empty space at the top and bottom. The handwriting is Thai, English, or both mixed, with physiotherapy shorthand.
+
+TASK: read ALL the handwriting on the whole page, then sort each piece by its CLINICAL MEANING into the sections below. IGNORE which printed label it happens to sit next to: a palpation finding written beside "Muscle power" is still palpation; range-of-motion numbers written at the bottom of the page are still range of motion.
+
+RULES
+- Read only what was written, drawn or ticked by hand. Never copy the printed questions, labels or instructions.
+- Do NOT return the patient's name, nickname, phone, e-mail, address, date of birth, age, height, weight, emergency contact, insurance, medical-certificate or "how did you hear about us" answers, massage pressure, the Bangkok questions, or the therapist's signature.
+- Keep every word in the language it was written in. Do not translate, do not correct, do not expand abbreviations. Copy every number, unit, side (Rt/Lt/R/L/ขวา/ซ้าย) and symbol exactly.
+- A word you cannot read becomes [?]. Never guess a word or a number and never add anything that is not on the paper.
+- One finding per line. Keep things that were written together on one line ("F 30 (40)", "DL: 40 kg 10/3").
+- Marks on the body diagram: describe where ("X at Rt. lateral knee", "circle around upper back") together with any words written beside them.
+
+HOW TO SORT (examples of shorthand)
+- chief_complaint: why the patient came, in the patient's or the physio's words; the pain area.
+- present_history: how long, how it started, what makes it worse or better, sport / work / training load ("run 3-4 d/wk 15 km", "DL 40 kg 10/3", "B-S 40 10/3").
+- past_history: underlying disease, earlier treatment for this problem (and what / where), surgery, accidents, regular medicine, old injuries, imaging results ("X-ray ปกติ", "MRI L5-S1").
+- pain_score: pain ratings such as "6/10", "rest 2/10", "VAS 5/10" (keep any word that says when).
+- observation: posture, alignment, swelling, gait, what the physio saw.
+- palpation: tenderness, tightness, trigger points, spasm, temperature, muscles listed with a finding, circumference measurements.
+- active_rom / passive_rom: movements with degrees, "full", "limit by ...", F / E / Lat flex / Rot with numbers. If it does not say passive, it is active.
+- muscle_power: grades (4/5, 3+), "weak", muscle strength findings.
+- special_test: named tests with a result (+ve / -ve / neg / pos / norm), e.g. "-ve McMurray", "drawer -ve", SLR, FABER.
+- functional_test: balance, knee to wall ("K to W 5.6 / 9 cm"), single leg heel raise counts, squat, hop, step down, sit to stand.
+- neurological: sensation, reflexes, myotomes, numbness testing.
+- diagnosis: the physio's impression or the condition named (e.g. "PFPS", "ITB syndrome", "MPS").
+- plan: goals, focus list, advice, things to do next ("thoracic mobility", "posture training", "core stabilize").
+- treatment: modalities or manual treatment given. exercise: exercises prescribed, with their dose.
+- other: handwriting you could read but could not place. Nothing readable may be dropped.
+
+Return JSON only, with exactly these keys (all strings; separate lines with \\n; empty string when nothing was written):
+{"chief_complaint":"","present_history":"","past_history":"","pain_score":"","observation":"","palpation":"","active_rom":"","passive_rom":"","muscle_power":"","special_test":"","functional_test":"","neurological":"","diagnosis":"","plan":"","treatment":"","exercise":"","other":""}`;
+  async function photoToJpegBase64(file) {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" }).catch(() => createImageBitmap(file));
+    const max = 2000, k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.88).split(",")[1];
+  }
+  async function askGemini(b64) {
+    const body = JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: "image/jpeg", data: b64 } }, { text: AI_PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } });
+    let lastErr = null;
+    for (const model of AI_MODELS) {
+      let res;
+      try { res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": aiKey() }, body }); }
+      catch { throw new Error("Could not reach Google's reader — check the internet connection"); }
+      if (res.status === 404) { lastErr = new Error("Google's reader model was not found"); continue; }
+      if (res.status === 429) throw new Error("Google's free reader is busy or over today's free limit — wait a minute and try again");
+      if (res.status === 400 || res.status === 401 || res.status === 403) throw new Error("Google did not accept the reader key saved on this device — open “Handwriting reader” under the notes box and check it");
+      if (!res.ok) { lastErr = new Error(`Google's reader answered with an error (${res.status})`); continue; }
+      const j = await res.json();
+      const txt = (((j.candidates || [])[0] || {}).content || {}).parts ? j.candidates[0].content.parts.map((p) => p.text || "").join("") : "";
+      if (!txt) throw new Error("Google's reader returned nothing for that photo — try a straighter, brighter shot");
+      try { return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("Google's reader answered in a form this page could not use — try the photo again"); }
+    }
+    throw lastErr || new Error("The photo could not be read");
+  }
+  // What was read goes straight into the boxes, word for word; nothing is interpreted here.
+  function placePhotoFields(r) {
+    const str = (k) => String(r[k] == null ? "" : r[k]).trim();
+    const put = (sec, heading, text) => {
+      if (!text) return 0;
+      const t = target(sec, heading); if (!t || !t[0]) return 0;
+      let n = 0;
+      text.split(/\n+/).map((l) => l.replace(/^(?:[•·*]|-(?!\s*ve\b))\s*/i, "").trim())   /* a list dash goes, the minus of "-ve" stays */.filter(Boolean).forEach((line) => { if (!hasLine(t[0], line)) { append(t[0], line, t[1] || ""); n++; } });
+      return n;
+    };
+    let n = 0;
+    n += put("subjective", "", str("chief_complaint"));
+    n += put("subjective", "PresentHistory", str("present_history"));
+    n += put("subjective", "PastHistory", str("past_history"));
+    // a single plain score goes on the New patient's record pain scale; anything richer ("rest 2/10, run 6/10") is kept as written
+    const ps = str("pain_score"), pm = /^(?:vas\s*)?(\d{1,2})(?:\s*\/\s*10)?$/i.exec(ps);
+    if (ps) {
+      if (pm && +pm[1] <= 10 && S.format === "New patient's record") { S.fields["Pain scale"] = pm[1]; n++; }
+      else n += put("objective", "", ps.split(/\n+/).map((l) => (/vas|pain/i.test(l) ? l : "Pain score: " + l)).join("\n"));
+    }
+    n += put("objective", "Observation", str("observation"));
+    n += put("objective", "Palpation", str("palpation"));
+    n += put("objective", "Active range of motions", str("active_rom"));
+    n += put("objective", "Passive range of motions", str("passive_rom"));
+    n += put("objective", "Muscle power", str("muscle_power"));
+    n += put("objective", "Special test", str("special_test"));
+    n += put("objective", "Functional test", str("functional_test"));
+    n += put("objective", "Neurological examination", str("neurological"));
+    n += put("analysis", "", str("diagnosis"));
+    n += put("plan", "", str("plan")) || (S.format === "New patient's record" && str("plan") ? put("treatment", "", str("plan").split(/\n+/).map((l) => "Plan: " + l).join("\n")) : 0);
+    n += put("treatment", "", str("treatment"));
+    n += put("exercise", "Exercise", str("exercise"));
+    return n;
+  }
+  async function readPhotosAI(files) {
+    const btn = $("photobtn"); btn.classList.add("busy");
+    try {
+      let placed = 0;
+      for (let n = 0; n < files.length; n++) {
+        ocrState(files.length > 1 ? `Reading the handwriting — photo ${n + 1} of ${files.length}…` : "Reading the handwriting…");
+        const r = await askGemini(await photoToJpegBase64(files[n]));
+        placed += placePhotoFields(r);
+        // the pain area and the complaint also go to the notes box, so the body region and the side are picked up
+        // the complaint goes to the notes box too, so the body region and the side are picked up; so does
+        // anything the reader could not place — nothing that was read is thrown away
+        const hintText = [r.chief_complaint && "Chief complaint: " + String(r.chief_complaint).replace(/\n+/g, "; "), r.other && "Not placed: " + String(r.other).replace(/\n+/g, "; ")].filter(Boolean).join("\n");
+        if (hintText) { const ta = $("transcript"); ta.value = (ta.value.replace(/\s+$/, "") ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + "[From photo]\n" + hintText; ta.dispatchEvent(new Event("input")); if (!$("trbox").open) $("trbox").open = true; }
+      }
+      // a test the physio wrote by hand ("-ve McMurray") makes the pre-listed empty line for it pointless
+      const tidyTests = () => { const t = target("objective", "Special test");
+      if (!(t && t[0] && S.prefilled)) return;
+        const written = val(t[0]).split("\n").map((l) => l.trim().toLowerCase()).filter((l) => l && !BLANK_TEST.test(l));
+        val(t[0]).split("\n").forEach((l) => { const tl = l.trim(); if (!BLANK_TEST.test(tl) || !S.prefilled.has(testName(tl))) return; const key = testName(tl).toLowerCase().split(/[\s(]/)[0]; if (key.length >= 4 && written.some((w) => w.includes(key))) removeLine(t[0], tl); });
+      }; tidyTests(); setTimeout(() => { tidyTests(); renderOutput(); }, 1600);   // again once the region's tests have been pre-listed
+      renderBuilder(); renderOutput();
+      ocrState(placed ? `Photo read — ${placed} line${placed === 1 ? "" : "s"} of handwriting put into the boxes below. Check every word against the paper; [?] marks a word that could not be read.` : "Google's reader found no handwriting it could read in that photo — try a straighter, brighter shot.");
+    } catch (err) {
+      console.error(err); ocrState(err.message || "The photo could not be read");
+    } finally { btn.classList.remove("busy"); }
+  }
+  function paintAiBox() {
+    const on = !!aiKey();
+    const st = $("aistate"); if (st) st.textContent = on ? "On — a reader key is saved on this device. Handwriting on chart photos is read." : "Off — no key on this device. Only printed text is read from photos.";
+    // owner decision 2026-09-19: no notice per photo. The "never uploaded" sentence is only shown while it is true.
+    const pv = $("photoprivacy"); if (pv) pv.textContent = on ? "" : "Photos are read on this device and never uploaded.";
+    const rm = $("aikeyremove"); if (rm) rm.hidden = !on;
+  }
+  function initAiBox() {
+    if (!$("aibox")) return;
+    $("aikeysave").onclick = () => { const v = $("aikey").value.trim(); if (!v) { toast("Paste the key first"); return; } try { localStorage.setItem(AI_KEY_SLOT, v); } catch { toast("This browser would not save the key (private window?)"); return; } $("aikey").value = ""; paintAiBox(); toast("Handwriting reader is on for this device"); };
+    $("aikeyremove").onclick = () => { try { localStorage.removeItem(AI_KEY_SLOT); } catch {} paintAiBox(); toast("Handwriting reader is off for this device"); };
+    paintAiBox();
+  }
+
   async function readPhotos(files) {
+    if (aiKey()) return readPhotosAI(files);
     const btn = $("photobtn"); btn.classList.add("busy");
     try {
       const w = await getWorker();
@@ -1351,6 +1501,7 @@
   });
   micLabel();
   wireMic($("trmic"));
+  initAiBox();
   $("photo").onchange = (e) => { const files = [...e.target.files]; e.target.value = ""; if (files.length) readPhotos(files); };
   $("audio").onchange = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) transcribeAudio(f); };
   $("lastnote").addEventListener("paste", () => setTimeout(useLastNote, 50));
