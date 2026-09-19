@@ -1260,7 +1260,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     if (!res.ok) throw new Error("The handwriting reader answered with an error (" + res.status + ")");
     let j; try { j = await res.json(); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
     // the good free model is sometimes "busy"; the weak one is never used for handwriting, so say so and let the physio try again
-    if (!j.text && (j.busy || /\b(503|429)\b|high demand|quota/i.test(String(j.error || "")))) { const e = new Error("Google's handwriting reader is busy right now — tap Photo of chart again in a minute."); e.busy = true; throw e; }
+    // "busy" also when the good models were refused for today's free allowance (429 quota) and the last error is about some other model
+    if (!j.text && (j.busy || /\b(503|429)\b|high demand|quota/i.test(String(j.error || "") + " " + JSON.stringify(j.skipped || [])))) { const e = new Error("Google's free handwriting reader is busy or has used up today's free reads — try Photo of chart again in a few minutes."); e.busy = true; throw e; }
     if (j.error || !j.text) throw new Error("The handwriting reader did not answer (" + String(j.error || "empty").slice(0, 180) + ")");
     try { return JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
   }
