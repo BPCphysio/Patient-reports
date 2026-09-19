@@ -482,6 +482,15 @@
     "Low back & pelvis": "Trunk / lumbar", "Hip & thigh": "Hip", "Knee": "Knee", "Ankle & foot": "Ankle & foot" };
   const dxField = () => (S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis");
   const CONDITION_REGION = [
+    // --- abbreviations first: a physio types "PFPS", "LBP", "CTS", not the long name ---
+    [/\b(pfps|pfs|pfp|pfoa|aclr?|pcl|mcl|lcl|plc|mpfl|tka|tkr|uka|itbs|itbfs|oa knee|knee oa|pes anserin\w*|hoffa|plica|osd|sinding)\b/i, "Knee"],
+    [/\b(atfl|cfl|ptfl|las|cai|mtss|pttd|hav|fhl|tts|at rupture|plantar fasc\w*|pf heel|sever|lisfranc|syndesmosis|high ankle)\b/i, "Ankle & foot"],
+    [/\b(rc|rct|rcr|rtc|sis|sais|sasd|acj|gird|lhb|lhbt|hags|tsa|rtsa|bankart|hill.?sachs|fs shoulder|frozen)\b/i, "Shoulder"],
+    [/\b(fai|gtps|tha|thr|oa hip|hip oa|avn|snapping hip|tfl|pghd)\b/i, "Hip"],
+    [/\b(cts|dq|dqt|tfcc|ucl|le elbow|tennis elbow|golfer'?s elbow|cubts|ecu|ecrb|cmc|mallet|dupuytren|ganglion|colles|scaphoid|tcl)\b/i, "Elbow, wrist & hand"],
+    [/\b(ais|t4 syndrome|costochond\w*|scheuermann)\b|\bt(?:1[0-2]|[1-9])\b(?!\s*(?:weeks?|wks?|months?))/i, "Thoracic spine"],
+    [/\b(wad|tos|tmj|tmd|cgh|tth|c-?spine|cs spondylosis|cervical)\b|\bc[1-7]\b/i, "Neck / cervical"],
+    [/\b(lbp|clbp|nslbp|hivd|pid|ddd|lss|fbss|ls spine|l-?spine|sijd|si joint|spondylo\w*|cauda)\b|\bl[1-5]\b|\bs1\b/i, "Trunk / lumbar"],
     [/\b(acl|pcl|mcl|lcl|aclr)\b|meniscus|meniscal|patell|knee|itb|runner'?s|jumper'?s|osgood|chondromalacia|baker|genu|tibial plateau/i, "Knee"],
     [/ankle|atfl|cfl|achilles|plantar|heel|shin|foot|toe|hallux|calf|gastroc|soleus|peroneal|tibialis|bunion|morton/i, "Ankle & foot"],
     [/shoulder|rotator|supraspinatus|infraspinatus|subscap|impingement|frozen|adhesive|labr|slap|ac joint|biceps tend|bursitis of the shoulder|glenohumeral|scapul/i, "Shoulder"],
@@ -493,11 +502,24 @@
     [/office syndrome|upper cross|text neck|headache|torticollis|whiplash|cervical|neck|trapezius|levator|scalene|suboccipital|sternocleidomastoid/i, "Neck / cervical"],
     [/lower cross|low back|lumbar|disc|hnp|sciatic|spondyl|stenosis|sij|sacroiliac|coccy|pelvic|piriformis|quadratus lumborum|\bql\b|erector|multifidus/i, "Trunk / lumbar"],
     [/postur/i, "Thoracic spine"],
+    // --- the clinic's own wordings and misspellings that matched nothing above (checked against all 2,496 condition names) ---
+    [/\bback (?:muscles?|pain|strain|spasm|ache)|herniated nucleus|nucleus pulposus|\blumbo|paraspinal|\btrunk control/i, "Trunk / lumbar"],
+    [/talofibular|calcaneofibular|deltoid ligament|\bmtp\b|metatars|achil+es+|\bta tend|tarsal|navicular|cuboid|fibula(?!r head)|lower legs?\b/i, "Ankle & foot"],
+    [/\bbicep\b|acromio|clavic|serratus|deltoid(?! ligament)|shoul|pectoral|\bpec\b|teres|latissimus|humer/i, "Shoulder"],
+    [/popliteus|iliotibial|tibial fracture|proximal tibia|tibial osteotomy|\bhto\b|quadriceps tend|quad tend|pes anser|fabella|\b4cl\b/i, "Knee"],
+    [/rectus femoris|retus femoris|iliopsoas|psoas|hip flexor|ischial|sartorius|femoral neck|pubalgia|osteitis pubis/i, "Hip"],
+    [/median nerve|ulnar nerve|radial nerve|metacarp|phalan|scapholunate|olecranon|brachioradialis|pronator/i, "Elbow, wrist & hand"],
+    [/c-?spin|spondylosis of the neck|cervico|occipit|\bscm\b|jaw/i, "Neck / cervical"],
+    [/sco[il]{2,3}osis|rib cage|intercostal|thoraco/i, "Thoracic spine"],
   ];
   function regionForCondition(name) {
     const lc = name.toLowerCase();
     for (const [group, list] of Object.entries(V.DIAGNOSES)) if (list.some((d) => d.toLowerCase() === lc) && GROUP_REGION[group]) return GROUP_REGION[group];
-    for (const [re, region] of CONDITION_REGION) if (re.test(name)) return region;
+    // a disc, stenosis or radiculopathy with a cervical marker is a neck patient wherever the words sit ("HNP C5-6")
+    if (/\bc[1-7]\b|cervic|\bneck\b/i.test(name) && /hernia|\bhnp\b|disc|radicul|spondyl|stenosis/i.test(name)) return "Neck / cervical";
+    let best = null;
+    for (const [re, region] of CONDITION_REGION) { const m = re.exec(name); if (m && (!best || m.index < best.i)) best = { i: m.index, region }; }
+    if (best) return best.region;
     return DETECT.run(name, S.region).region || "General / other";
   }
   // Which of the clinic's conditions do these findings look like? Every condition in
@@ -523,6 +545,13 @@
     });
     return best;
   }
+  // "Left PFPS", "PFPS at lt. knee", "Rt. biceps tendinitis and both PFPS", "OA knee Lt.>Rt.", "ซ้าย": the first side named wins
+  function sideForCondition(name) {
+    const m = /\b(both|bilateral|bilat|bil)\b|\b(lt|left)\b\.?|\b(rt|right)\b\.?|(ทั้งสองข้าง|สองข้าง)|(ซ้าย)|(ขวา)/i.exec(String(name || ""));
+    if (!m) return "";
+    if (/(lt|left)\.?\s*[>=<&\/]\s*(rt|right)|(rt|right)\.?\s*[>=<&\/]\s*(lt|left)/i.test(name)) return "Both";
+    return m[1] || m[4] ? "Both" : m[2] || m[5] ? "Lt." : "Rt.";
+  }
   function setCondition(name, auto) {
     name = (name || "").trim(); if (!name) return;
     const f = dxField();
@@ -533,6 +562,8 @@
     if (r && r !== S.region && (r !== "General / other" || !S.region || S.region === "General / other")) { S.region = r; $("region").value = r; }
     // spine, posture and whole-body conditions have no side: scoliosis, low back, neck, MPS…
     if ((MIDLINE.has(S.region) || /scoliosis|posture|spine|spinal|lumbar|cervical|thoracic|core|pelvic|coccy/i.test(name)) && !S.sideManual && !S.sideAuto) setSide("", true);
+    // a side in the name sets the side, unless the physio has already pressed a side button
+    { const sd = sideForCondition(name); if (sd && !S.sideManual && sd !== S.side && !MIDLINE.has(S.region)) setSide(sd, true); }
     S.showAll = false;
     renderBuilder(); prefillTests(); applyPack(); renderOutput(); renderCondTag(); renderSuggest();
   }
@@ -1692,4 +1723,5 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();
+  window.__bpcDebug = { regionForCondition, sideForCondition };   // read-only hooks for testing the condition -> region / side tables
 })();
