@@ -485,7 +485,7 @@
     // --- abbreviations first: a physio types "PFPS", "LBP", "CTS", not the long name ---
     [/\b(pfps|pfs|pfp|pfoa|aclr?|pcl|mcl|lcl|plc|mpfl|tka|tkr|uka|itbs|itbfs|oa knee|knee oa|pes anserin\w*|hoffa|plica|osd|sinding)\b/i, "Knee"],
     [/\b(atfl|cfl|ptfl|las|cai|mtss|pttd|hav|fhl|tts|at rupture|plantar fasc\w*|pf heel|sever|lisfranc|syndesmosis|high ankle)\b/i, "Ankle & foot"],
-    [/\b(rc|rct|rcr|rtc|sis|sais|sasd|acj|gird|lhb|lhbt|hags|tsa|rtsa|bankart|hill.?sachs|fs shoulder|frozen)\b/i, "Shoulder"],
+    [/\b(rc|rct|rcr|rtc|sis|sais|sasd|acj|gird|lhb|lhbt|hags|tsa|rtsa|bankart|hill.?sachs|fs shoulder)\b/i, "Shoulder"],
     [/\b(fai|gtps|tha|thr|oa hip|hip oa|avn|snapping hip|tfl|pghd)\b/i, "Hip"],
     [/\b(cts|dq|dqt|tfcc|ucl|le elbow|tennis elbow|golfer'?s elbow|cubts|ecu|ecrb|cmc|mallet|dupuytren|ganglion|colles|scaphoid|tcl)\b/i, "Elbow, wrist & hand"],
     [/\b(ais|t4 syndrome|costochond\w*|scheuermann)\b|\bt(?:1[0-2]|[1-9])\b(?!\s*(?:weeks?|wks?|months?))/i, "Thoracic spine"],
@@ -499,7 +499,7 @@
     [/scoliosis|kyphosis|thoracic|rib|costo/i, "Thoracic spine"],
     // "myofascial" / "mps" alone say nothing about where: the clinic files MPS for neck, low-back, hip
     // and knee patients alike, so a bare MPS stays "General / other" until a place is named or heard
-    [/office syndrome|upper cross|text neck|headache|torticollis|whiplash|cervical|neck|trapezius|levator|scalene|suboccipital|sternocleidomastoid/i, "Neck / cervical"],
+    [/office syndrome|upper cross|text neck|headache|torticollis|whiplash|cervical|neck|trapezius|levator|scalene|sub-?occipital|cranio|sternocleidomastoid/i, "Neck / cervical"],
     [/lower cross|low back|lumbar|disc|hnp|sciatic|spondyl|stenosis|sij|sacroiliac|coccy|pelvic|piriformis|quadratus lumborum|\bql\b|erector|multifidus/i, "Trunk / lumbar"],
     [/postur/i, "Thoracic spine"],
     // --- the clinic's own wordings and misspellings that matched nothing above (checked against all 2,496 condition names) ---
@@ -514,6 +514,10 @@
   ];
   function regionForCondition(name) {
     const lc = name.toLowerCase();
+    // owner decision: MPS never opens a region by itself. The vocabulary files "Myofascial pain syndrome (MPS)" under
+    // "Neck & upper back", so a myofascial name skips that list lookup: only a PLACE in the name ("at upper trapezius",
+    // "sub-occipital", "cranio-cervical") or the notes decide the region.
+    if (!/^\s*(?:mps\b|myofas?cial)/i.test(name))
     for (const [group, list] of Object.entries(V.DIAGNOSES)) if (list.some((d) => d.toLowerCase() === lc) && GROUP_REGION[group]) return GROUP_REGION[group];
     // a disc, stenosis or radiculopathy with a cervical marker is a neck patient wherever the words sit ("HNP C5-6")
     if (/\bc[1-7]\b|cervic|\bneck\b/i.test(name) && /hernia|\bhnp\b|disc|radicul|spondyl|stenosis/i.test(name)) return "Neck / cervical";
@@ -559,11 +563,11 @@
     S.condition = name; S.conditionAuto = !!auto;
     if (!hasLine(f, name)) append(f, name, "", true);
     const r = regionForCondition(name);
-    if (r && r !== S.region && (r !== "General / other" || !S.region || S.region === "General / other")) { S.region = r; $("region").value = r; }
+    if (r && r !== S.region && (r !== "General / other" || !S.region || S.region === "General / other")) { S.region = r; $("region").value = r; S.regionFromCond = r !== "General / other"; }
     // spine, posture and whole-body conditions have no side: scoliosis, low back, neck, MPS…
     if ((MIDLINE.has(S.region) || /scoliosis|posture|spine|spinal|lumbar|cervical|thoracic|core|pelvic|coccy/i.test(name)) && !S.sideManual && !S.sideAuto) setSide("", true);
     // a side in the name sets the side, unless the physio has already pressed a side button
-    { const sd = sideForCondition(name); if (sd && !S.sideManual && sd !== S.side && !MIDLINE.has(S.region)) setSide(sd, true); }
+    { const sd = sideForCondition(name); if (sd && !S.sideManual && sd !== S.side && !MIDLINE.has(S.region)) { setSide(sd, true); S.sideFromCond = true; } }
     S.showAll = false;
     renderBuilder(); prefillTests(); applyPack(); renderOutput(); renderCondTag(); renderSuggest();
   }
@@ -696,6 +700,10 @@
   function clearCondition() {
     if (S.condition) removeLine(dxField(), S.condition);
     S.condition = ""; S.conditionAuto = false;
+    // the region and side that the condition's own name had set go with it ("Left PFPS" cleared, then "MPS":
+    // MPS must not inherit Knee / Lt.). A region or side the physio chose, or one heard in the notes, stays.
+    if (S.sideFromCond && !S.sideManual) { S.sideFromCond = false; setSide("", true); }
+    if (S.regionFromCond && !S.regionManual) { S.regionFromCond = false; S.region = "General / other"; $("region").value = S.region; renderBuilder(); }
     clearPrefilledTests(); applyPack();   // no condition -> its pack lines go too
     renderCondTag(); renderOutput(); renderSuggest();
   }
@@ -1691,14 +1699,20 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   // the page opens on the New patient's record: no treatment count, no "last note" box
   $("tt").disabled = S.format !== "SOAP with treatment"; $("lastbox").hidden = S.format === "New patient's record";
   V.REGIONS.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; $("region").appendChild(o); });
-  $("region").onchange = (e) => { S.region = e.target.value; S.regionManual = true; renderBuilder(); prefillTests(); applyPack(); autoFill(); };
+  $("region").onchange = (e) => { S.region = e.target.value; S.regionManual = true; S.regionFromCond = false; renderBuilder(); prefillTests(); applyPack(); autoFill(); };
   $("tt").oninput = renderOutput; $("patient").oninput = renderOutput;
   $("dxq").oninput = renderDx;
   $("dxq").onkeydown = (e) => {
     if (e.key !== "Enter") return; e.preventDefault();
     const q = ($("dxq").value || "").trim(); if (!q) return;
-    const first = $("dxhits").querySelector("button");
-    setCondition(first ? first.textContent : q); $("dxq").value = ""; renderDx();
+    // Enter takes what the physio typed when that is a condition in its own right: an exact match among the
+    // suggestions, or an abbreviation / a name with a side ("MPS", "PFPS", "Lt. CTS"). Typing "MPS" + Enter used
+    // to pick the first suggestion, "MPS at upper trapezius", and open the neck. Otherwise: the first suggestion.
+    const hits = [...$("dxhits").querySelectorAll("button")];
+    const exact = hits.find((b) => b.textContent.trim().toLowerCase() === q.toLowerCase());
+    const isAbbrev = /^[A-Za-z]{2,6}$/.test(q) && (q === q.toUpperCase() || /^(mps|oa|ra|doms)$/i.test(q) || CONDITION_REGION.slice(0, 8).some(([re]) => re.test(q)));   // "PFPS", "lbp", "MPS" — not "frozen"
+    const ownName = isAbbrev ||/\b(lt|rt|left|right|both|bilateral)\b/i.test(q) || q.split(/\s+/).length >= 3;
+    setCondition(exact ? exact.textContent : isAbbrev ? q.toUpperCase() : ownName || !hits.length ? q : hits[0].textContent); $("dxq").value = ""; renderDx();
   };
   $("sides").querySelectorAll("button").forEach((b) => b.onclick = () => { S.sideManual = true; setSide(b.dataset.s); renderCondTag(); renderBuilder(); });
   $("region").addEventListener("change", () => { S.showAll = false; prefillTests(); });
