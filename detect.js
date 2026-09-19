@@ -116,7 +116,7 @@ window.DETECT = (function () {
         let sp;
         if (/\?\s*$/.test(s)) sp = "Clinician";
         else if (/^(?:okay|ok|good|alright|all right)[.,!]*$/i.test(s)) sp = prevQ ? "Patient" : "Clinician";
-        else if (CONVO_FIRST.test(s)) sp = /your?/i.test(s) && !/when you (?:press|push|do|move|touch|lift|bend)/i.test(s) ? "Clinician" : "Patient";   // "I feel like your SI joint…" is the physio
+        else if (CONVO_FIRST.test(s)) sp = /\byour?\b/i.test(s) && !/\bwhen you (?:press|push|do|move|touch|lift|bend)/i.test(s) ? "Clinician" : "Patient";   // "I feel like your SI joint…" is the physio
         else if (CONVO_PATIENT.test(s) && !CONVO_PHYSIO.test(s)) sp = "Patient";
         else if (CONVO_PHYSIO.test(s)) sp = "Clinician";
         else sp = prevQ ? "Patient" : who;
@@ -138,7 +138,10 @@ window.DETECT = (function () {
   const EXAM_WORDS = /\b(observation|palpation|palpat\w*|a?rom|prom|range of motion|muscle power|mmt|strength|special test|functional|neuro\w*|treatment(?!\s+times?)|plan|diagnosis|analysis|gym|home program|exercise|tenderness|trigger point)\b|ตรวจร่างกาย|การตรวจ|กดเจ็บ|คลำ/i;
   const isExamLine = (line) => line.length <= 220 ? (/^\s*(observation|palpation|active|passive|a?rom|prom|range of|muscle power|mmt|strength|special|functional|neuro|treatment|plan|diagnosis|analysis|gym|home program|exercise|ตรวจร่างกาย|การตรวจ)/i.test(line) || /palpat|กดเจ็บ|trigger point|tenderness|คลำ/i.test(line)) : false;
   // in a long dictated line, the exam section starts where the first exam word appears
-  const inExamPart = (low, i) => { const line = speakerLine(low, i); if (line.length <= 220) return isExamLine(line); const start = low.lastIndexOf("\n", i) + 1; const m = EXAM_WORDS.exec(low.slice(start, i + 1)); return !!m; };
+  // A one-breath dictation puts the complaint first and "observation … palpation …" after it on the same
+  // line, long or short: only what comes AFTER the first exam word is examination. (Judging a short line
+  // as a whole dropped "ปวดคอบ่าขวา" because the word "palpation" came later in the sentence.)
+  const inExamPart = (low, i) => { const line = speakerLine(low, i); if (/^\s*(observation|palpation|active|passive|a?rom|prom|range of|muscle power|mmt|strength|special|functional|neuro|treatment|plan|diagnosis|analysis|gym|home program|exercise|ตรวจร่างกาย|การตรวจ)/i.test(line)) return true; const start = low.lastIndexOf("\n", i) + 1; const before = low.slice(start, i + 1); return line.length > 220 ? EXAM_WORDS.test(before) : /\b(observation|palpation|palpat\w*|tenderness|trigger point|a?rom|range of motion|muscle power|special test)\b|กดเจ็บ|คลำ|ตรวจร่างกาย|การตรวจ/i.test(before); };
   const speakerLine = (low, i) => { const s = low.lastIndexOf("\n", i) + 1; const e = low.indexOf("\n", i); return low.slice(s, e < 0 ? low.length : e); };
   const prevText = (low, i, n) => low.slice(Math.max(0, i - (n || 90)), i);
   function aliasesOf(term) {
@@ -780,7 +783,7 @@ window.DETECT = (function () {
             }
           }
           if (isQuestion(qLine(m.index)) || patientSaid(m.index)) { continue; }
-          if (negated(low, m.index)) { neg.push(label); phSeen.add(label); break; }
+          if (negated(low, m.index) || /(?:ไม่เคย|ไม่มี|ไม่ได้|ปฏิเสธ|\bnever had\b|\bno history of\b)\s*(?:การ|ประวัติ)?\s*$/.test(low.slice(Math.max(0, m.index - 16), m.index))) { neg.push(label); phSeen.add(label); break; }
           const tail = low.slice(m.index + m[0].length, m.index + m[0].length + 40).match(/^\s*(?:is|of|:|คือ)?\s*([a-zก-๙][^.,;\n]{2,38})/);
           pos.push(tail ? `${label[0].toUpperCase()}${label.slice(1)}: ${tail[1].trim()}` : `${label[0].toUpperCase()}${label.slice(1)} present`);
           phSeen.add(label); break;

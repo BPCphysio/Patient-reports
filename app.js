@@ -552,6 +552,11 @@
     if (S.region === "General / other") return true;   // export already keeps region-free lines only in "p"
     const regs = DETECT.regionsOf ? DETECT.regionsOf(line) : new Set();
     LEVEL_REGION.forEach(([re, r]) => { if (re.test(line.replace(SIDE_TOKEN, " "))) regs.add(r); });
+    // the physios' own misspellings and loose wording in chart lines ("Hamtring", "back rotation", "lateral back flexion")
+    if (/ham\w{0,2}tr\w*|quadr?i?cep|\bcalf\b|gastroc/i.test(line)) { regs.add("Knee"); regs.add("Hip"); regs.add("Ankle & foot"); }
+    if (/\b(?:lateral |low(?:er)? )?back (?:flexion|extension|rotation|bending)\b|\blumba\w*/i.test(line)) regs.add("Trunk / lumbar");
+    if (/\bneck\b|\bcervi\w*/i.test(line)) regs.add("Neck / cervical");
+    if (/\bshoulder|\bscapul\w*/i.test(line)) regs.add("Shoulder");
     return !regs.size || regs.has(S.region);
   }
   const packSide = (line) => noBlanks(withSide(line));
@@ -1182,6 +1187,7 @@ TASK: read ALL the handwriting on the whole page, then sort each piece by its CL
 
 RULES
 - Read only what was written, drawn or ticked by hand. Never copy the printed questions, labels or instructions.
+- USE the printed question to understand what each handwritten answer means, then write only the answer with a short label of your own: "Pain area: neck", "Duration: 1 week", "Treated before: yes - ultrasound", "Underlying disease: none" (a dash or N/A means none). A mark on the body diagram becomes "Pain marked: back of upper neck". Pain area and duration belong in chief_complaint and present_history.
 - Do NOT return the patient's name, nickname, phone, e-mail, address, date of birth, age, height, weight, emergency contact, insurance, medical-certificate or "how did you hear about us" answers, massage pressure, the Bangkok questions, or the therapist's signature.
 - Keep every word in the language it was written in. Do not translate, do not correct, do not expand abbreviations. Copy every number, unit, side (Rt/Lt/R/L/ขวา/ซ้าย) and symbol exactly.
 - A word you cannot read becomes [?]. Never guess a word or a number and never add anything that is not on the paper.
@@ -1214,23 +1220,49 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
     return c.toDataURL("image/jpeg", 0.88).split(",")[1];
   }
+  // Model names change (2026-09-19: both built-in names came back 404 on the owner's key), so the
+  // page asks Google which models this key can use and tries the newest "flash" ones first. A model
+  // that is refused (not found, or no free quota — free quotas are per model) just means "try the next".
+  const AI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+  let aiModelList = null;
+  async function aiModels() {
+    if (aiModelList) return aiModelList;
+    let names = [];
+    try {
+      const res = await fetch(`${AI_BASE}/models?pageSize=200`, { headers: { "x-goog-api-key": aiKey() } });
+      if (res.ok) {
+        const j = await res.json();
+        names = (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes("generateContent")).map((m) => String(m.name || "").replace(/^models\//, ""))
+          .filter((n) => /^gemini/.test(n) && !/image|tts|audio|live|embedding|robotics|computer|learnlm|gemma|aqa/i.test(n));
+      }
+    } catch { /* fall through to the built-in list */ }
+    const ver = (n) => { const m = /gemini-(\d+(?:\.\d+)?)/.exec(n); return m ? parseFloat(m[1]) : 0; };
+    const rank = (n) => (/latest/.test(n) ? 1000 : 0) + (/flash/.test(n) ? 100 : 0) - (/lite/.test(n) ? 30 : 0) - (/preview|exp/.test(n) ? 20 : 0) + ver(n);
+    names.sort((x, y) => rank(y) - rank(x));
+    aiModelList = [...new Set([...names.slice(0, 5), ...AI_MODELS, "gemini-2.5-flash-lite"])];
+    return aiModelList;
+  }
   async function askGemini(b64) {
     const body = JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: "image/jpeg", data: b64 } }, { text: AI_PROMPT }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } });
-    let lastErr = null;
-    for (const model of AI_MODELS) {
+    let lastMsg = "";
+    const models = await aiModels();
+    for (const model of models.slice(0, 7)) {
       let res;
-      try { res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": aiKey() }, body }); }
-      catch { throw new Error("Could not reach Google's reader — check the internet connection"); }
-      if (res.status === 404) { lastErr = new Error("Google's reader model was not found"); continue; }
-      if (res.status === 429) throw new Error("Google's free reader is busy or over today's free limit — wait a minute and try again");
-      if (res.status === 400 || res.status === 401 || res.status === 403) throw new Error("Google did not accept the reader key saved on this device — open “Handwriting reader” under the notes box and check it");
-      if (!res.ok) { lastErr = new Error(`Google's reader answered with an error (${res.status})`); continue; }
+      try { res = await fetch(`${AI_BASE}/models/${model}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": aiKey() }, body }); }
+      catch { throw new Error("Could not reach the handwriting reader — check the internet connection"); }
+      if (!res.ok) {
+        let gm = ""; try { gm = ((await res.json()).error || {}).message || ""; } catch {}
+        lastMsg = `${res.status} ${gm}`.trim().slice(0, 180);
+        if (res.status === 401 || res.status === 403) throw new Error("Google refused the reader key (" + lastMsg + ")");
+        continue;   // 404 unknown model, 429 no free quota on this model, 400 / 5xx: try the next model
+      }
       const j = await res.json();
-      const txt = (((j.candidates || [])[0] || {}).content || {}).parts ? j.candidates[0].content.parts.map((p) => p.text || "").join("") : "";
-      if (!txt) throw new Error("Google's reader returned nothing for that photo — try a straighter, brighter shot");
-      try { return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("Google's reader answered in a form this page could not use — try the photo again"); }
+      const parts = ((((j.candidates || [])[0] || {}).content || {}).parts) || [];
+      const txt = parts.map((p) => p.text || "").join("");
+      if (!txt) { lastMsg = "empty answer from " + model; continue; }
+      try { aiModelList = [model, ...models.filter((m) => m !== model)]; return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { lastMsg = "unreadable answer from " + model; continue; }
     }
-    throw lastErr || new Error("The photo could not be read");
+    throw new Error("The handwriting reader did not answer (" + (lastMsg || "no model available") + ")");
   }
   // What was read goes straight into the boxes, word for word; nothing is interpreted here.
   function placePhotoFields(r) {
@@ -1250,6 +1282,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     const ps = str("pain_score"), pm = /^(?:vas\s*)?(\d{1,2})(?:\s*\/\s*10)?$/i.exec(ps);
     if (ps) {
       if (pm && +pm[1] <= 10 && S.format === "New patient's record") { S.fields["Pain scale"] = pm[1]; n++; }
+      else if (pm && +pm[1] <= 10) n += put("objective", "", `VAS ${pm[1]}/10`);
       else n += put("objective", "", ps.split(/\n+/).map((l) => (/vas|pain/i.test(l) ? l : "Pain score: " + l)).join("\n"));
     }
     n += put("objective", "Observation", str("observation"));
@@ -1289,7 +1322,14 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
       renderBuilder(); renderOutput();
       ocrState(placed ? `Photo read — ${placed} line${placed === 1 ? "" : "s"} of handwriting put into the boxes below. Check every word against the paper; [?] marks a word that could not be read.` : "Google's reader found no handwriting it could read in that photo — try a straighter, brighter shot.");
     } catch (err) {
-      console.error(err); ocrState(err.message || "The photo could not be read");
+      console.error(err);
+      btn.classList.remove("busy");
+      if (!$("trbox").open) $("trbox").open = true;
+      const why = err.message || "The handwriting reader failed";
+      toast(why);
+      await readPhotos(files, true);
+      ocrState(why + " — the photo was read with the built-in reader instead (printed text only).");
+      return;
     } finally { btn.classList.remove("busy"); }
   }
   function paintAiBox() {
@@ -1298,6 +1338,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     // owner decision 2026-09-19: no notice per photo. The "never uploaded" sentence is only shown while it is true.
     const pv = $("photoprivacy"); if (pv) pv.textContent = on ? "" : "Photos are read on this device and never uploaded.";
     const rm = $("aikeyremove"); if (rm) rm.hidden = !on;
+    // once a device is set up the box is gone for good — a physio using the page never sees it
+    const box = $("aibox"); if (box) box.hidden = on;
   }
   function initAiBox() {
     if (!$("aibox")) return;
@@ -1306,8 +1348,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     paintAiBox();
   }
 
-  async function readPhotos(files) {
-    if (aiKey()) return readPhotosAI(files);
+  async function readPhotos(files, builtInOnly) {
+    if (aiKey() && !builtInOnly) return readPhotosAI(files);
     const btn = $("photobtn"); btn.classList.add("busy");
     try {
       const w = await getWorker();
@@ -1323,7 +1365,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         if (!$("trbox").open) $("trbox").open = true;
       }
       ocrState("Photo read — check the words below; the reader guesses at handwriting.");
-      setTimeout(() => ocrState(""), 6000);
+      if (!builtInOnly) setTimeout(() => ocrState(""), 6000);   // after a failed handwriting read the reason stays on screen
     } catch (err) {
       console.error(err); ocrState(""); toast(err.message || "The photo could not be read");
     } finally { btn.classList.remove("busy"); }
