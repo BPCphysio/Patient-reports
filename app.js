@@ -1387,6 +1387,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     const box = $("aibox"); if (box) box.hidden = on;
   }
   function initAiBox() {
+    // a key pasted into the old per-device box (drafts 23-24) is not used any more: the relay holds the key
+    if (AI_RELAY_URL) { try { localStorage.removeItem(AI_KEY_SLOT); } catch {} }
     paintAiBox();
     if (!$("aibox")) return;   // the set-up box was removed from the page on the owner's instruction (2026-09-19)
     $("aikeysave").onclick = () => { const v = $("aikey").value.trim(); if (!v) { toast("Paste the key first"); return; } try { localStorage.setItem(AI_KEY_SLOT, v); } catch { toast("This browser would not save the key (private window?)"); return; } $("aikey").value = ""; paintAiBox(); toast("Handwriting reader is on for this device"); };
