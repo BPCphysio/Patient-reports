@@ -12,7 +12,7 @@
 
   // ---------- state ----------
   const S = {
-    format: "SOAP with treatment",
+    format: "New patient's record",   // owner 2026-09-19: the site is mostly used for new patients, so that form opens first
     region: V.REGIONS[0],
     fields: {},
     lang: "th-TH",
@@ -1305,7 +1305,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         .map((l) => l.replace(/^[-–•·*]\s*(?!ve\b)/i, "").replace(/\s*[;,]\s*$/, "").trim())
         .filter((l) => l && !PHOTO_PII.test(l) && (fromNotes || !PHOTO_ADMIN.test(l)) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a|no|yes|now)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")))
         // a reminder the physio jotted down ("describe about your pain?") is not a finding; a scrap is not a line
-        .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= 4 && (l.match(/\[\?\]/g) || []).length <= 1);
+        // "7/10", "E 10", "4/5" are short but complete: the 4-letter scrap rule is for the wordy boxes only (it silently dropped every pain score in drafts 27-29)
+        .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= (/^(chief_complaint|present_history|past_history|observation|diagnosis|plan|other)$/.test(k) ? 4 : 2) && (l.match(/\[\?\]/g) || []).length <= 1);
       o[k] = lines.filter((l) => {
         if (k !== "active_rom" && k !== "passive_rom" && PHOTO_ROM.test(l)) { moved.active_rom.push(l); return false; }
         if (k !== "pain_score" && /^\d{1,2}\s*\/\s*10$/.test(l)) { moved.pain_score.push(l); return false; }
@@ -1351,6 +1352,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     if (ps) {
       if (pm && +pm[1] <= 10 && S.format === "New patient's record") { S.fields["Pain scale"] = pm[1]; n++; }
       else if (pm && +pm[1] <= 10) n += put("objective", "", `VAS ${pm[1]}/10`);
+      // several scores ("rest 2/10", "run 6/10"): the New patient's record has one pain-scale row of buttons, so they are kept as written in the history of the episode
+      else if (S.format === "New patient's record") n += put("subjective", "PresentHistory", ps.split(/\n+/).map((l) => (/vas|pain/i.test(l) ? l : "Pain score: " + l)).join("\n"));
       else n += put("objective", "", ps.split(/\n+/).map((l) => (/vas|pain/i.test(l) ? l : "Pain score: " + l)).join("\n"));
     }
     n += put("objective", "Observation", str("observation"));
@@ -1639,9 +1642,13 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   // ---------- init ----------
   const CAPTIONS = { "SOAP with treatment": "Every follow-up visit", "New patient's record": "First visit or a consultation",
     "Physiotherapy Report": "Report for the patient, employer or insurer" };
-  Object.keys(V.OUTPUT_FORMATS).forEach((f, i) => {
+  // New patient's record first (and selected), SOAP with treatment second, then the rest in their own order
+  const FORMAT_ORDER = ["New patient's record", "SOAP with treatment"].filter((f) => V.OUTPUT_FORMATS[f]);
+  Object.keys(V.OUTPUT_FORMATS).forEach((f) => { if (!FORMAT_ORDER.includes(f)) FORMAT_ORDER.push(f); });
+  if (!V.OUTPUT_FORMATS[S.format]) S.format = FORMAT_ORDER[0];
+  FORMAT_ORDER.forEach((f) => {
     const l = document.createElement("label");
-    l.innerHTML = `<input type="radio" name="fmt" value="${f}" ${i === 0 ? "checked" : ""}><b>${f}</b><small>${CAPTIONS[f] || ""}</small>`;
+    l.innerHTML = `<input type="radio" name="fmt" value="${f}" ${f === S.format ? "checked" : ""}><b>${f}</b><small>${CAPTIONS[f] || ""}</small>`;
     l.querySelector("input").onchange = () => {
       S.format = f; S.auto = {}; $("tt").disabled = f !== "SOAP with treatment";
       $("lastbox").hidden = f === "New patient's record"; // a new patient has no last note
@@ -1650,6 +1657,8 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
     };
     $("formats").appendChild(l);
   });
+  // the page opens on the New patient's record: no treatment count, no "last note" box
+  $("tt").disabled = S.format !== "SOAP with treatment"; $("lastbox").hidden = S.format === "New patient's record";
   V.REGIONS.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; $("region").appendChild(o); });
   $("region").onchange = (e) => { S.region = e.target.value; S.regionManual = true; renderBuilder(); prefillTests(); applyPack(); autoFill(); };
   $("tt").oninput = renderOutput; $("patient").oninput = renderOutput;
