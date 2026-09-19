@@ -1295,15 +1295,15 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   const PHOTO_PII = /(?:\+?\d[\d\s-]{7,}\d)|[\w.+-]+@[\w-]+\.[\w.]+|^\s*(?:k\.|khun|คุณ|mr\.?|mrs\.?|ms\.?|miss)\s*\S+\s*$/i;
   const PHOTO_FILLER = /^(?:observation|palpation|range of motion|rom|muscle power|special test|posture|postural\/alignment|work\/activity|activity|sitting position|past history|chief complaint)\s*(?:notes?)?\s*:\s*/i;
   const PHOTO_ROM = /^(?:\(?[LR]\)?\s*)?(?:F|E|Flex\w*|Ext\w*|Lat\.?\s*\w*|Rot\w*|Abd\w*|Add\w*|IR|ER)\b[^A-Za-zก-๙]{0,4}\d/;
-  const PHOTO_ADMIN = /insurance|ประกัน|certificate|ใบรับรอง|instagram|facebook|website|chatgpt|banner|friend referred|ผู้แนะนำ|massage pressure|\b(?:hard|medium|soft)\b.*\b(?:hard|medium|soft)\b|live in bangkok|staying in bangkok|emergency|date of birth|e-?mail|height|weight|therapist'?s name/i;
+  const PHOTO_ADMIN = /insurance|ประกัน|certificate|ใบรับรอง|instagram|facebook|website|chatgpt|banner|friend referred|ผู้แนะนำ|massage pressure|\b(?:hard|medium|soft)\b.*\b(?:hard|medium|soft)\b|live in bangkok|staying in bangkok|emergency|date of birth|e-?mail|\bheight\b|\bweight\b(?! ?bearing)|therapist'?s name/i;
   const PHOTO_PAST = /accident|อุบัติเหตุ|surger|operat|ผ่าตัด|\bago\b|ปีก่อน|ปีที่แล้ว|\bmri\b|x-?ray|ultrasound scan|\bct\b|fracture|กระดูกหัก|previous|treated before|เคยรักษา|เคยทำกายภาพ|underlying|โรคประจำตัว|medication|medicine|painkiller/i;
   const PHOTO_BEHAVE = /stairs?|บันได|sitting|นั่ง|walking|เดิน|running|วิ่ง|standing|ยืน|worse|better|aggravat|eas(?:e|ing)|\brest\b|cause unknown|don'?t know (?:the )?cause|ไม่รู้สาเหตุ|\btense\b|\btight\b|\bdull\b|\bsharp\b|radiat|numb|ชา|ร้าว|morning|night|กลางคืน/i;
-  function cleanPhotoReading(r) {
+  function cleanPhotoReading(r, fromNotes) {
     const o = {}; const moved = { active_rom: [], pain_score: [], past_history: [], present_history: [] };
     Object.keys(r || {}).forEach((k) => {
       const lines = String(r[k] == null ? "" : r[k]).split(/\n+/).map((l) => l.replace(PHOTO_FILLER, "").trim())
         .map((l) => l.replace(/^[-–•·*]\s*(?!ve\b)/i, "").replace(/\s*[;,]\s*$/, "").trim())
-        .filter((l) => l && !PHOTO_PII.test(l) && !PHOTO_ADMIN.test(l) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a|no|yes|now)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")))
+        .filter((l) => l && !PHOTO_PII.test(l) && (fromNotes || !PHOTO_ADMIN.test(l)) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a|no|yes|now)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")))
         // a reminder the physio jotted down ("describe about your pain?") is not a finding; a scrap is not a line
         .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= 4 && (l.match(/\[\?\]/g) || []).length <= 1);
       o[k] = lines.filter((l) => {
@@ -1332,14 +1332,14 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     const out = {}; Object.keys(o).forEach((k) => { out[k] = [...new Set(o[k])].join("\n"); });
     return out;
   }
-  function placePhotoFields(r) {
-    r = cleanPhotoReading(r);
+  function placePhotoFields(r, rec, keepScraps) {
+    r = cleanPhotoReading(r, keepScraps);
     const str = (k) => String(r[k] == null ? "" : r[k]).trim();
     const put = (sec, heading, text) => {
       if (!text) return 0;
       const t = target(sec, heading); if (!t || !t[0]) return 0;
       let n = 0;
-      text.split(/\n+/).map((l) => l.replace(/^(?:[•·*]|-(?!\s*ve\b))\s*/i, "").trim())   /* a list dash goes, the minus of "-ve" stays */.filter(Boolean).forEach((line) => { if (!hasLine(t[0], line)) { append(t[0], line, t[1] || ""); n++; } });
+      text.split(/\n+/).map((l) => l.replace(/^(?:[•·*]|-(?!\s*ve\b))\s*/i, "").trim())   /* a list dash goes, the minus of "-ve" stays */.filter(Boolean).forEach((line) => { if (heading === "Special test" && /(\+ve|-ve)\s*$/.test(line)) removeBlankTest(t[0], line); if (!hasLine(t[0], line)) { append(t[0], line, t[1] || ""); if (rec) rec.push([t[0], line]); n++; } });
       return n;
     };
     let n = 0;
@@ -1418,6 +1418,63 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     $("aikeysave").onclick = () => { const v = $("aikey").value.trim(); if (!v) { toast("Paste the key first"); return; } try { localStorage.setItem(AI_KEY_SLOT, v); } catch { toast("This browser would not save the key (private window?)"); return; } $("aikey").value = ""; paintAiBox(); toast("Handwriting reader is on for this device"); };
     $("aikeyremove").onclick = () => { try { localStorage.removeItem(AI_KEY_SLOT); } catch {} paintAiBox(); toast("Handwriting reader is off for this device"); };
     paintAiBox();
+  }
+
+  // ---------- the notes box, read by meaning (owner: "that box needs to be really smart", 2026-09-19) ----------
+  // The on-device rules (detect.js) fill the boxes at once. A few seconds after the physio stops typing,
+  // dictating or pasting, the same notes also go through the relay to Gemini, which reads them the way a
+  // colleague would and returns ONLY what the rules missed. Those lines are added, remembered, and taken
+  // back out if the notes change. If the free allowance is used up or Google is busy, nothing happens:
+  // the rules' result simply stands.
+  const NOTES_PROMPT = `You are helping a physiotherapist at Bangkok Physiotherapy Center write a patient chart. Below are their session NOTES: a dictation, typed notes, or a transcript of the whole session (Thai, English or mixed). A transcript may have no speaker labels and misheard words ("the right hit" = right hip, "SI joy" = SI joint).
+Sort every clinically relevant fact into the sections below.
+
+RULES
+- Only what is stated. Never add, infer, average or tidy a number: degrees, grades, n/10, sets and reps, minutes, MHz, w/cm2 are copied exactly or left out.
+- A physio's question is not a finding; the patient's answer is. What the physio explains to the patient about the problem is the diagnosis / analysis. Small talk is nothing.
+- Write short chart lines in English in the clinic's style: "Rt." / "Lt."; "Tenderness at Rt. upper trapezius"; "Knee flexion Rt.: 120° with pain"; "Trunk extension: pain at end range"; "full ROM" ONLY if the physio said the range was full; "Quadriceps Rt.: Grade 4/5"; special tests as "McMurray test Rt.: -ve"; exercises as "Wall sit — 10 x 3 sets"; treatment as the modality with the parameters that were said.
+- chief_complaint: the main problem only (where it hurts, for how long). present_history: how it started, what makes it worse or better, quality of the pain, work / sport load. past_history: underlying disease, surgery, accidents, old injuries, earlier treatment, imaging, regular medicine ("No surgery" when the patient says none).
+- No names, phone numbers or other identifying details.
+- One fact per line. Do not repeat a fact that is already listed under ALREADY IN THE NOTE, even in other words.
+
+Return JSON only, with exactly these keys (strings; lines separated by \\n; "" when nothing):
+{"chief_complaint":"","present_history":"","past_history":"","pain_score":"","observation":"","palpation":"","active_rom":"","passive_rom":"","muscle_power":"","special_test":"","functional_test":"","neurological":"","diagnosis":"","plan":"","treatment":"","exercise":""}`;
+  const smart = { timer: null, last: "", busy: false, at: 0, quietUntil: 0 };
+  const smartState = (t) => { const el = $("smartstate"); if (el) el.textContent = t || ""; };
+  function scheduleSmart() {
+    if (!AI_RELAY_URL) return;
+    clearTimeout(smart.timer);
+    smart.timer = setTimeout(runSmart, 3000);
+  }
+  function retractSmart() {
+    (S.aiLines || []).forEach(([f, l]) => { if (hasLine(f, l)) removeLine(f, l); updateTa(f); });
+    S.aiLines = [];
+  }
+  async function runSmart() {
+    const text = $("transcript").value.trim();
+    if (!text) { if ((S.aiLines || []).length) { retractSmart(); renderOutput(); } smart.last = ""; smartState(""); return; }
+    if (text.length < 40 || smart.busy || text === smart.last || Date.now() < smart.quietUntil) return;
+    // a few characters changed since the last read: not worth one of the day's free reads
+    if (smart.last && Math.abs(text.length - smart.last.length) < 30 && text.slice(0, 120) === smart.last.slice(0, 120)) return;
+    const wait = 20000 - (Date.now() - smart.at); if (wait > 0) { smart.timer = setTimeout(runSmart, wait); return; }
+    smart.busy = true; smart.at = Date.now(); const sent = text;
+    smartState("Reading the notes for anything the first pass missed…");
+    try {
+      const mine = new Set((S.aiLines || []).map(([f, l]) => f + "\u0000" + l.trim()));
+      const already = V.OUTPUT_FORMATS[S.format].map((f) => { const ls = val(f).split("\n").map((l) => l.trim()).filter((l) => l && !mine.has(f + "\u0000" + l) && !BLANK_TEST.test(l)); return ls.length ? f + ": " + ls.join(" | ") : ""; }).filter(Boolean).join("\n");
+      const res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, redirect: "follow",
+        body: JSON.stringify({ notes: sent.slice(0, 60000), prompt: NOTES_PROMPT + "\n\nALREADY IN THE NOTE:\n" + (already || "(nothing yet)") }) });
+      const j = await res.json();
+      window.__bpcSmart = { at: new Date().toISOString(), model: j.model || "", error: j.error || "", skipped: j.skipped || [] };   // for troubleshooting only
+      if (!j.text) { if (j.busy || /429|503|quota|high demand/i.test(String(j.error || "") + JSON.stringify(j.skipped || []))) smart.quietUntil = Date.now() + 5 * 60000; smartState(""); return; }
+      if ($("transcript").value.trim() !== sent) { smartState(""); return; }          // the notes changed while Google was reading: this answer is stale
+      const r = JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, ""));
+      retractSmart();
+      const rec = []; const n = placePhotoFields(r, rec, true); S.aiLines = rec; smart.last = sent;
+      renderBuilder(); renderOutput();
+      smartState(n ? `${n} more line${n === 1 ? "" : "s"} added from the notes by the second, smarter read — check each one.` : "");
+    } catch (err) { console.error(err); smartState(""); }
+    finally { smart.busy = false; }
   }
 
   async function readPhotos(files, builtInOnly) {
@@ -1605,7 +1662,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   };
   $("sides").querySelectorAll("button").forEach((b) => b.onclick = () => { S.sideManual = true; setSide(b.dataset.s); renderCondTag(); renderBuilder(); });
   $("region").addEventListener("change", () => { S.showAll = false; prefillTests(); });
-  $("transcript").oninput = () => { renderNums(); renderBuilder(); scheduleFill(); };
+  $("transcript").oninput = () => { renderNums(); renderBuilder(); scheduleFill(); scheduleSmart(); };
   const langName = () => (S.lang === "en-US" ? "English" : "Thai");
   const micLabel = () => { document.querySelectorAll("button.mic[data-target]").forEach((b) => { if (!b.classList.contains("on")) b.textContent = `🎙 Dictate (${langName()})`; }); };
   $("langs").querySelectorAll("button").forEach((b) => b.onclick = () => {
