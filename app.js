@@ -560,6 +560,8 @@
     name = (name || "").trim(); if (!name) return;
     const f = dxField();
     if (S.condition && S.condition !== name && S.conditionAuto !== false) removeLine(f, S.condition);
+    if (!auto && S.condition && S.condition !== name && S.conditionAuto === false && !(S.moreConditions || []).includes(S.condition)) (S.moreConditions = S.moreConditions || []).push(S.condition);
+    S.moreConditions = (S.moreConditions || []).filter((c) => c !== name);
     S.condition = name; S.conditionAuto = !!auto;
     if (!hasLine(f, name)) append(f, name, "", true);
     const r = regionForCondition(name);
@@ -699,6 +701,7 @@
   const MIDLINE = new Set(["Neck / cervical", "Thoracic spine", "Trunk / lumbar", "General / other"]);
   function clearCondition() {
     if (S.condition) removeLine(dxField(), S.condition);
+    (S.moreConditions || []).forEach((c) => removeLine(dxField(), c)); S.moreConditions = [];
     S.condition = ""; S.conditionAuto = false;
     // the region and side that the condition's own name had set go with it ("Left PFPS" cleared, then "MPS":
     // MPS must not inherit Knee / Lt.). A region or side the physio chose, or one heard in the notes, stays.
@@ -712,7 +715,7 @@
     if (!S.condition) { host.hidden = true; $("dxq").placeholder = "Type what you found — plantar, MPS, ACL, frozen shoulder…"; return; }
     host.hidden = false; $("dxq").placeholder = "Add another condition…";
     const tag = document.createElement("span"); tag.className = "tag";
-    tag.innerHTML = `<span>${escapeHtml(S.condition)}</span><small>${escapeHtml(S.region)}${S.side ? " · " + escapeHtml(S.side) : " · no side"}${S.conditionGuess ? " · closest match in the charts" : ""}</small>`;
+    tag.innerHTML = `<span>${escapeHtml([...(S.moreConditions || []), S.condition].join(" + "))}</span><small>${escapeHtml(S.region)}${S.side ? " · " + escapeHtml(S.side) : " · no side"}${S.conditionGuess ? " · closest match in the charts" : ""}</small>`;
     const x = document.createElement("button"); x.type = "button"; x.title = "Remove this condition"; x.textContent = "×"; x.onclick = clearCondition;
     tag.appendChild(x); host.appendChild(tag);
   }
@@ -1291,13 +1294,15 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     aiModelList = [...new Set([...names.slice(0, 5), ...AI_MODELS, "gemini-2.5-flash-lite"])];
     return aiModelList;
   }
-  async function askRelay(b64) {
+  const relayBusy = (j) => !j.text && (j.busy || /\b(503|429)\b|high demand|quota/i.test(String(j.error || "") + " " + JSON.stringify(j.skipped || [])));
+  async function askRelay(b64, attempt) {
     let res;
     // text/plain keeps this a "simple" request: Apps Script web apps do not answer CORS preflights
     try { res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ image: b64, prompt: AI_PROMPT, strict: true }), redirect: "follow" }); }
     catch { throw new Error("Could not reach the handwriting reader — check the internet connection"); }
     if (!res.ok) throw new Error("The handwriting reader answered with an error (" + res.status + ")");
     let j; try { j = await res.json(); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
+    if (relayBusy(j) && (attempt || 0) < 2) { ocrState("The handwriting reader is busy — trying the next one…"); await new Promise((r) => setTimeout(r, 5000)); return askRelay(b64, (attempt || 0) + 1); }
     // the good free model is sometimes "busy"; the weak one is never used for handwriting, so say so and let the physio try again
     // "busy" also when the good models were refused for today's free allowance (429 quota) and the last error is about some other model
     if (!j.text && (j.busy || /\b(503|429)\b|high demand|quota/i.test(String(j.error || "") + " " + JSON.stringify(j.skipped || [])))) { const e = new Error("Google's free handwriting reader is busy or has used up today's free reads — try Photo of chart again in a few minutes."); e.busy = true; throw e; }
@@ -1337,6 +1342,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   const PHOTO_ADMIN = /insurance|ประกัน|certificate|ใบรับรอง|instagram|facebook|website|chatgpt|banner|friend referred|ผู้แนะนำ|massage pressure|\b(?:hard|medium|soft)\b.*\b(?:hard|medium|soft)\b|live in bangkok|staying in bangkok|emergency|date of birth|e-?mail|\bheight\b|\bweight\b(?! ?bearing)|therapist'?s name/i;
   const PHOTO_PAST = /accident|อุบัติเหตุ|surger|operat|ผ่าตัด|\bago\b|ปีก่อน|ปีที่แล้ว|\bmri\b|x-?ray|ultrasound scan|\bct\b|fracture|กระดูกหัก|previous|treated before|เคยรักษา|เคยทำกายภาพ|underlying|โรคประจำตัว|medication|medicine|painkiller/i;
   const PHOTO_BEHAVE = /stairs?|บันได|sitting|นั่ง|walking|เดิน|running|วิ่ง|standing|ยืน|worse|better|aggravat|eas(?:e|ing)|\brest\b|cause unknown|don'?t know (?:the )?cause|ไม่รู้สาเหตุ|\btense\b|\btight\b|\bdull\b|\bsharp\b|radiat|numb|ชา|ร้าว|morning|night|กลางคืน/i;
+  const PHOTO_BODY = /\b(hip|knee|back|neck|shoulder|ankle|foot|heel|elbow|wrist|hand|finger|thumb|leg|arm|thigh|calf|shin|spine|head|jaw|rib|chest|groin|glute|hamstring|lumbar|cervical|thoracic)s?\b|คอ|บ่า|ไหล่|สะบัก|หลัง|เอว|เข่า|สะโพก|ข้อเท้า|เท้า|ขา|แขน|ศอก|ข้อมือ|น่อง/i;
   function cleanPhotoReading(r, fromNotes) {
     const o = {}; const moved = { active_rom: [], pain_score: [], past_history: [], present_history: [] };
     Object.keys(r || {}).forEach((k) => {
@@ -1352,7 +1358,9 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         if (k === "pain_score" && !/\d{1,2}\s*\/\s*10/.test(l)) return false;   // only a score really written as n/10
         // the chief complaint is the main problem only: history and behaviour have their own boxes
         if (k === "chief_complaint" && PHOTO_PAST.test(l)) { moved.past_history.push(l); return false; }
-        if (k === "chief_complaint" && PHOTO_BEHAVE.test(l) && !/^pain area/i.test(l)) { moved.present_history.push(l); return false; }
+        // "Low back pain radiating down Lt leg, 3 months" IS the complaint even though it says "radiating": a line that names
+        // a body part stays; only behaviour with no body part ("pain with prolonged sitting") moves to the history of the episode
+        if (k === "chief_complaint" && PHOTO_BEHAVE.test(l) && !/^pain area/i.test(l) && !PHOTO_BODY.test(l)) { moved.present_history.push(l); return false; }
         if (k === "present_history" && PHOTO_PAST.test(l)) { moved.past_history.push(l); return false; }
         // a chief complaint names a body part or a pain; anything else the model left there is a note about the episode
         if (k === "chief_complaint" && !/pain|ปวด|เจ็บ|ache|sore|stiff|ตึง|numb|ชา|injur|sprain|strain|hip|knee|back|neck|shoulder|ankle|foot|heel|elbow|wrist|hand|finger|leg|arm|thigh|calf|shin|spine|head|jaw|rib|chest|groin|glute|hamstring|คอ|บ่า|ไหล่|สะบัก|หลัง|เอว|เข่า|สะโพก|ข้อเท้า|เท้า|ขา|แขน|ศอก|ข้อมือ|น่อง|area/i.test(l)) { moved.present_history.push(l); return false; }
@@ -1481,7 +1489,7 @@ RULES
 
 Return JSON only, with exactly these keys (strings; lines separated by \\n; "" when nothing):
 {"chief_complaint":"","present_history":"","past_history":"","pain_score":"","observation":"","palpation":"","active_rom":"","passive_rom":"","muscle_power":"","special_test":"","functional_test":"","neurological":"","diagnosis":"","plan":"","treatment":"","exercise":""}`;
-  const smart = { timer: null, last: "", busy: false, at: 0, quietUntil: 0 };
+  const smart = { timer: null, last: "", busy: false, at: 0, quietUntil: 0, tries: 0 };
   const smartState = (t) => { const el = $("smartstate"); if (el) el.textContent = t || ""; };
   function scheduleSmart() {
     if (!AI_RELAY_URL) return;
@@ -1508,7 +1516,12 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
         body: JSON.stringify({ notes: sent.slice(0, 60000), prompt: NOTES_PROMPT + "\n\nALREADY IN THE NOTE:\n" + (already || "(nothing yet)") }) });
       const j = await res.json();
       window.__bpcSmart = { at: new Date().toISOString(), model: j.model || "", error: j.error || "", skipped: j.skipped || [] };   // for troubleshooting only
-      if (!j.text) { if (j.busy || /429|503|quota|high demand/i.test(String(j.error || "") + JSON.stringify(j.skipped || []))) smart.quietUntil = Date.now() + 5 * 60000; smartState(""); return; }
+      if (!j.text) {
+        if (relayBusy(j) && smart.tries < 2) { smart.tries++; smart.at = 0; smartState("The smart reader is busy — trying the next one…"); clearTimeout(smart.timer); smart.timer = setTimeout(runSmart, 6000); return; }
+        if (relayBusy(j)) smart.quietUntil = Date.now() + 2 * 60000;
+        smart.tries = 0; smartState(""); return;
+      }
+      smart.tries = 0;
       if ($("transcript").value.trim() !== sent) { smartState(""); return; }          // the notes changed while Google was reading: this answer is stale
       const r = JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, ""));
       retractSmart();

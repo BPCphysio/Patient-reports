@@ -359,7 +359,10 @@ window.VOCAB = {
    "Wrist flexion",
    "Wrist extension",
    "Radial deviation",
-   "Ulnar deviation"
+   "Ulnar deviation",
+   "Finger flexion",
+   "Finger extension",
+   "Thumb opposition"
   ],
   "Thoracic spine": [
    "Thoracic flexion",
@@ -492,7 +495,9 @@ window.VOCAB = {
   "Arm raise",
   "Multisegmental rotation",
   "Multisegmental flexion",
-  "Multisegmental extension"
+  "Multisegmental extension",
+  "Weight bearing on hand",
+  "Grip"
  ],
  "FUNCTIONAL_BY_REGION": {
   "Ankle & foot": [
@@ -596,7 +601,12 @@ window.VOCAB = {
   "SIJ compression",
   "Kemp test",
   "Ely test",
-  "Hawkins test"
+  "Hawkins test",
+  "Adson test",
+  "Eden test",
+  "Roos test",
+  "Wright test",
+  "Upper limb tension test"
  ],
  "POSITIONS": [
   "Supine lying",
@@ -634,6 +644,7 @@ window.VOCAB = {
   "Passive stretch": "Passive stretch: ___, ___ sec x ___ reps",
   "Joint mobilization": "Joint mobilization grade ___  Area: ___",
   "Spinal mobilization": "Spinal mobilization grade ___  Area: ___",
+  "Nerve mobilization": "Nerve mobilization: ___",
   "Cupping": "Cupping  Area: ___, ___ mins",
   "Taping": "Taping: ___  Area: ___",
   "Home advice": "Home advice: ___",
@@ -1348,6 +1359,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1415,6 +1427,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1471,6 +1484,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1533,6 +1547,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1606,6 +1621,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1678,6 +1694,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1762,6 +1779,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1835,6 +1853,7 @@ window.VOCAB = {
     "Stretching",
     "Passive stretch",
     "Joint mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",
@@ -1896,7 +1915,12 @@ window.VOCAB = {
     "SIJ compression",
     "Kemp test",
     "Ely test",
-    "Hawkins test"
+    "Hawkins test",
+    "Adson test",
+    "Eden test",
+    "Roos test",
+    "Wright test",
+    "Upper limb tension test"
    ],
    "functional": [
     "Sit to stand double legs",
@@ -1925,7 +1949,9 @@ window.VOCAB = {
     "Arm raise",
     "Multisegmental rotation",
     "Multisegmental flexion",
-    "Multisegmental extension"
+    "Multisegmental extension",
+    "Weight bearing on hand",
+    "Grip"
    ],
    "muscle_groups": [
     "Neck & shoulder",
@@ -2020,6 +2046,7 @@ window.VOCAB = {
     "Passive stretch",
     "Joint mobilization",
     "Spinal mobilization",
+    "Nerve mobilization",
     "Cupping",
     "Taping",
     "Home advice",

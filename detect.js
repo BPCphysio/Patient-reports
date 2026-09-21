@@ -135,13 +135,13 @@ window.DETECT = (function () {
     return side(after) || before || (fallback === false ? "" : side(clause(low, i, len)));
   }
   // exam and treatment lines describe findings, not complaints
-  const EXAM_WORDS = /\b(observation|palpation|palpat\w*|a?rom|prom|range of motion|muscle power|mmt|strength|special test|functional|neuro\w*|treatment(?!\s+times?)|plan|diagnosis|analysis|gym|home program|exercise|tenderness|trigger point)\b|ตรวจร่างกาย|การตรวจ|กดเจ็บ|คลำ/i;
+  const EXAM_WORDS = /\b(observation|palpation|palpat\w*|hypomobil\w*|hypermobil\w*|a?rom|prom|range of motion|muscle power|mmt|strength|special test|functional|neuro\w*|treatment(?!\s+times?)|plan|diagnosis|analysis|gym|home program|exercise|tenderness|trigger point)\b|ตรวจร่างกาย|การตรวจ|กดเจ็บ|คลำ/i;
   const isExamLine = (line) => line.length <= 220 ? (/^\s*(observation|palpation|active|passive|a?rom|prom|range of|muscle power|mmt|strength|special|functional|neuro|treatment|plan|diagnosis|analysis|gym|home program|exercise|ตรวจร่างกาย|การตรวจ)/i.test(line) || /palpat|กดเจ็บ|trigger point|tenderness|คลำ/i.test(line)) : false;
   // in a long dictated line, the exam section starts where the first exam word appears
   // A one-breath dictation puts the complaint first and "observation … palpation …" after it on the same
   // line, long or short: only what comes AFTER the first exam word is examination. (Judging a short line
   // as a whole dropped "ปวดคอบ่าขวา" because the word "palpation" came later in the sentence.)
-  const inExamPart = (low, i) => { const line = speakerLine(low, i); if (/^\s*(observation|palpation|active|passive|a?rom|prom|range of|muscle power|mmt|strength|special|functional|neuro|treatment|plan|diagnosis|analysis|gym|home program|exercise|ตรวจร่างกาย|การตรวจ)/i.test(line)) return true; const start = low.lastIndexOf("\n", i) + 1; const before = low.slice(start, i + 1); return line.length > 220 ? EXAM_WORDS.test(before) : /\b(observation|palpation|palpat\w*|tenderness|trigger point|a?rom|range of motion|muscle power|special test)\b|กดเจ็บ|คลำ|ตรวจร่างกาย|การตรวจ/i.test(before); };
+  const inExamPart = (low, i) => { const line = speakerLine(low, i); if (/^\s*(observation|palpation|active|passive|a?rom|prom|range of|muscle power|mmt|strength|special|functional|neuro|treatment|plan|diagnosis|analysis|gym|home program|exercise|ตรวจร่างกาย|การตรวจ)/i.test(line)) return true; const start = low.lastIndexOf("\n", i) + 1; const before = low.slice(start, i + 1); return line.length > 220 ? EXAM_WORDS.test(before) : /\b(observation|palpation|palpat\w*|hypomobil\w*|hypermobil\w*|tenderness|trigger point|a?rom|range of motion|muscle power|special test|functional test)\b|กดเจ็บ|คลำ|ตรวจร่างกาย|การตรวจ/i.test(before); };
   const speakerLine = (low, i) => { const s = low.lastIndexOf("\n", i) + 1; const e = low.indexOf("\n", i); return low.slice(s, e < 0 ? low.length : e); };
   const prevText = (low, i, n) => low.slice(Math.max(0, i - (n || 90)), i);
   function aliasesOf(term) {
@@ -234,7 +234,7 @@ window.DETECT = (function () {
   add("Warmth", "warmth", "warm", "ผิวอุ่น", "ผิวร้อน", "อุ่นกว่า", "ร้อนกว่า"); add("Joint stiffness", "joint stiffness", "stiff joint", "ข้อฝืด", "ข้อติด"); add("Crepitus", "crepitus", "crepitation", "grinding", "กรอบแกรบ", "เสียงกรอบแกรบ");
   add("Hypomobility", "hypomobile", "hypomobility", "ขยับได้น้อย"); add("Hypermobility", "hypermobile", "hypermobility", "ข้อหลวม");
   const EXAM = /\b(palpat\w*|tender\w*|trigger|spasm|feel|feels|felt|found|finding|findings|on examination|o\/e|noted|note)\b|คลำ|กด|พบ|ตรวจ|เจอ/;
-  add("upper trapezius", "upper trap", "upper traps", "trapezius", "traps", "บ่า", "กล้ามเนื้อบ่า"); add("levator scapulae", "levator", "lev scap");
+  add("upper trapezius", "upper trap", "upper traps", "trapezius", "traps", "บ่า", "กล้ามเนื้อบ่า"); add("levator scapulae", "levator", "lev scap", "elevator scapulae", "elevator scapula", "levator scapula");
   add("sub-occipital", "suboccipital", "sub occipital", "ท้ายทอย"); add("cervical paraspinal", "neck paraspinal", "cervical paraspinals"); add("sternocleidomastoid", "scm"); add("scalene", "scalenes");
   add("rhomboid", "rhomboids", "ระหว่างสะบัก"); add("pectoralis major", "pec major", "pecs", "pectorals", "กล้ามเนื้ออก", "กล้ามเนื้อหน้าอก"); add("pectoralis minor", "pec minor"); add("serratus anterior", "serratus"); add("latissimus dorsi", "lats", "latissimus");
   add("supraspinatus", "supraspinatus tendon"); add("infraspinatus"); add("subscapularis", "subscap"); add("anterior deltoid", "front deltoid"); add("middle deltoid", "mid deltoid"); add("posterior deltoid", "rear deltoid");
@@ -248,7 +248,7 @@ window.DETECT = (function () {
   add("popliteus", "ข้อพับเข่า"); add("gastrocnemius", "gastroc", "gastrocs", "calf muscle", "น่อง", "กล้ามเนื้อน่อง"); add("soleus"); add("tibialis anterior", "tib ant", "หน้าแข้ง"); add("tibialis posterior", "tib post");
   add("peroneus longus", "peroneals", "peroneal"); add("peroneus brevis"); add("patellar tendon", "เอ็นสะบ้า", "เอ็นใต้สะบ้า"); add("achilles tendon", "achilles", "เอ็นร้อยหวาย"); add("plantar fascia", "plantar", "ฝ่าเท้า", "พังผืดฝ่าเท้า");
   add("flexor hallucis longus", "fhl"); add("extensor digitorum", "edl", "toe extensors");
-  add("wrist extensor group", "wrist extensors", "wrist extensor", "extensor group", "กล้ามเนื้อกระดกข้อมือ"); add("wrist flexor group", "wrist flexors", "wrist flexor", "flexor group");
+  add("wrist extensor group", "wrist extensors", "wrist extensor", "extensor group", "กล้ามเนื้อกระดกข้อมือ"); add("wrist flexor group", "wrist flexors", "wrist flexor", "flexor group", "forearm flexors", "forearm flexor");
   add("common extensor origin", "ceo", "lateral epicondyle"); add("common flexor origin", "cfo", "medial epicondyle"); add("thenar", "thenar eminence", "โคนนิ้วโป้ง"); add("hypothenar"); add("pronator teres"); add("supinator"); add("first dorsal interosseous", "1st dorsal interosseous", "fdi");
   const ALL_MUSCLES = Object.values(V.MUSCLES).flat();
 
@@ -288,6 +288,9 @@ window.DETECT = (function () {
   const KEEP_TEST_WORD = new Set(["Squeeze test", "Speed's test", "Sulcus sign", "Empty can test", "Full can test", "Windlass test", "Compression test", "Distraction test"]);
   V.SPECIAL_TESTS.forEach((t) => { if (KEEP_TEST_WORD.has(t)) return; const s = t.replace(/\s+(test|sign)$/i, ""); if (s !== t && s.length >= 4) add(t, s, s.replace(/'s$/, "")); });
   add("Valgus stress test", "valgus stress", "valgus test"); add("Varus stress test", "varus stress", "varus test"); add("Compression test", "compression test", "cervical compression", "neck compression"); add("Distraction test", "distraction test", "cervical distraction", "neck distraction");
+  add("Compression test", "profession test", "compression tests"); add("Adson test", "adson test", "adson", "adsons test", "addison test", "adson's test");
+  add("Eden test", "eden test", "eden's test", "edens test", "costoclavicular test", "military brace test"); add("Roos test", "roos test", "roos", "east test", "elevated arm stress test");
+  add("Wright test", "wright test", "wright's test", "hyperabduction test"); add("Upper limb tension test", "upper limb tension", "ultt", "ulnt", "neural tension test");
   add("Lachman test", "lachman's"); add("Slump test", "slump"); add("SLR", "straight leg raise test", "straight leg raise", "straight leg raising", "lasegue"); add("Hawkins-Kennedy", "hawkins kennedy", "hawkins-kennedy");
   add("Anterior drawer (knee)", "anterior drawer"); add("Anterior drawer (ankle)", "anterior drawer"); add("Thompson test", "thompson", "calf squeeze"); add("Windlass test", "windlass"); add("Craniocervical flexion test", "ccft", "craniocervical flexion");
   add("Adam's forward bend test", "adams", "adam's", "forward bend test"); add("Sacroiliac compression", "sacroiliac compression test"); add("Trendelenburg", "trendelenburg sign", "trendelenberg");
@@ -586,7 +589,9 @@ window.DETECT = (function () {
     text = text
       .replace(/^[ \t]*\[\d{1,2}:\d{2}(?::\d{2})?\][ \t]*/gm, "")        // "[03:22] " at the start of a line
       .replace(/^Transcript:[^\n]*$/m, "")                                 // the transcriber's header line
-      .replace(/[๐-๙]/g, (d) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(d)));           // Thai numerals
+      .replace(/[๐-๙]/g, (d) => String("๐๑๒๓๔๕๖๗๘๙".indexOf(d)))           // Thai numerals
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/\bpaid (?=(?:and|in|at|on|with) )/gi, "pain ");   // speech recognition hears "paid" for "pain"; dictation leaves double spaces, and "forearm  flexors" matched nothing
     const low = numberWords(norm(text));
     const labelled = hasSpeakers(low);
     const sentEnd = (i) => { const cands = [". ", "? ", "! ", "\n"].map((p) => low.indexOf(p, i)).filter((x) => x >= 0); return cands.length ? Math.min(...cands) : low.length; };
@@ -910,7 +915,43 @@ window.DETECT = (function () {
       }
       return low.length;
     }
+    // ---- dictated ROM with the FINDING FIRST (clinic, 2026-09-21) ----
+    // "active range of motion: limited range of motion in her neck in all directions by tightness and tingling …
+    //  full range of motion of elbow in all directions, limited range of motion finger flexion and extension by
+    //  pain at palmar side, passive range of motion is full range of motion right finger flexion and extension
+    //  with pain". The movement loop below only understands "<movement> <finding>", so these were lost. Here the
+    // statement is cut at the next finding / section word, the joint and movements are read from it, and the
+    // reason is copied as said. Movements inside a handled statement are skipped by the loop below.
+    const romHandled = [];
+    {
+      const JOINTS = { neck: "Neck", cervical: "Neck", shoulder: "Shoulder", elbow: "Elbow", wrist: "Wrist", finger: "Finger", fingers: "Finger", thumb: "Thumb", trunk: "Trunk", lumbar: "Trunk", back: "Trunk", hip: "Hip", knee: "Knee", ankle: "Ankle", toe: "Toe", toes: "Toe" };
+      const JOINT_RE = /\b(neck|cervical|shoulder|elbow|wrist|fingers?|thumb|trunk|lumbar|back|hip|knee|ankle|toes?)\b/;
+      const MOVE_RE = /\b(lateral flexion|side flexion|flexion|flexing|extension|extending|abduction|adduction|internal rotation|external rotation|rotation|dorsiflexion|plantarflexion|plantar flexion|inversion|eversion|supination|pronation)\b/g;
+      const MOVE_NAME = { flexing: "flexion", extending: "extension", "side flexion": "lateral flexion", "plantar flexion": "plantarflexion", "internal rotation": "IR", "external rotation": "ER" };
+      const START = /\b(limited|full|normal)\s+(?:active |passive )?(?:range of motions?|rom)\b/g;
+      const STOP = /\b(?:limited|full|normal)\s+(?:active |passive )?(?:range of motions?|rom)\b|\b(?:passive|active) range of motions?\b|\b[ap]rom\b|\bmuscle power\b|\bspecial tests?\b|\bfunctional tests?\b|\bhypomobil|\bpalpat|\bfor (?:the )?exercise|\btreatment\b|\n/g;
+      const tidy = (t) => t.replace(/[,;]\s*$/, "").replace(/\bpaying\b/g, "pain").replace(/\bpalmer\b/g, "palmar").replace(/\b(?:and then|then|and|also|okay|so)\s*$/g, "").replace(/\s+/g, " ").trim().slice(0, 110);
+      let m;
+      while ((m = START.exec(low))) {
+        if (isQuestion(qLine(m.index)) || patientSaid(m.index)) continue;
+        const from = m.index + m[0].length; STOP.lastIndex = from; const st = STOP.exec(low);
+        const to = st ? st.index : Math.min(low.length, from + 240); const seg = low.slice(from, to);
+        const jm = JOINT_RE.exec(seg); if (!jm || jm.index > 40) { START.lastIndex = from; continue; }
+        const cut = /\b(?:by|with|due to|because of)\b/.exec(seg); const head = cut ? seg.slice(0, cut.index) : seg; const reason = cut ? tidy(seg.slice(cut.index + cut[0].length)) : "";
+        const joint = JOINTS[jm[1]]; const spine = joint === "Neck" || joint === "Trunk";
+        const back = low.slice(Math.max(0, m.index - 260), m.index + m[0].length); const pa = Math.max(back.lastIndexOf("passive"), back.lastIndexOf("prom")), ac = Math.max(back.lastIndexOf("active"), back.lastIndexOf("arom"));
+        const heading = pa > ac ? "Passive range of motions" : "Active range of motions";
+        const sd = spine ? "" : side(head) || fallbackSide();
+        const moves = [...new Set((head.slice(jm.index).match(MOVE_RE) || []).map((w) => MOVE_NAME[w] || w))];
+        const names = /all directions?/.test(head) || !moves.length ? [`${joint}${sd ? " " + sd : ""} all directions`] : moves.map((mv) => `${joint} ${mv}${sd ? " " + sd : ""}`);
+        const finding = m[1] === "limited" ? "limited" + (reason ? " by " + reason : "") : "full ROM" + (reason ? " with " + reason : "");
+        names.forEach((nm) => push("objective", heading, `${nm}: ${finding}`));
+        romHandled.push([m.index, to]); START.lastIndex = to;
+      }
+    }
     moveHits.forEach((h) => {
+      if (romHandled.some(([a, b]) => h.i >= a && h.i < b)) return;
+      if (/\b(muscle power|weakness|weak|strength)\b[^.\n]{0,40}$/.test(low.slice(Math.max(0, h.i - 60), h.i))) return;   // "weakness in muscle power, finger flexion limited by pain"
       const lineKey = h.term + "|" + sideNear(low, h.i, h.len, 10, false, 7) + "@" + low.lastIndexOf("\n", h.i); if (movesSeen.has(lineKey)) return; movesSeen.add(lineKey);
       const prefix = (h.term.split(" ")[0] || "").toLowerCase(); const preWord = (low.slice(Math.max(0, h.i - 16), h.i).match(/(hip|shoulder|knee|neck|cervical|trunk|lumbar|back|ankle|elbow|wrist|thoracic)\s*$/) || [])[1];
       if (preWord && prefix && preWord !== prefix && !(prefix === "trunk" && /lumbar|back/.test(preWord)) && !(prefix === "neck" && preWord === "cervical")) return;
@@ -1043,6 +1084,7 @@ window.DETECT = (function () {
     const exHits = [];
     const exPending = []; // {h, dose} — pushed after the shared-dose backfill pass below
     fx.forEach((h) => {
+      if (romHandled.some(([a, b]) => h.i >= a - 40 && h.i < b)) return;   // "… range of motion in her neck" is a finding, not the exercise "Neck ROM"
       const c = ctx(low, h.i, h.len, 60), cl = clause(low, h.i, h.len);
       const isEx = EXCTX.test(c) || DOSE1.test(sentenceOf(h.i)) || DOSE3.test(sentenceOf(h.i)) || /\b\d+\s*times\b/.test(sentenceOf(h.i)), isTest = TESTCTX.test(c) && !DOSE1.test(sentenceOf(h.i));
       const inF = FUNC_SET.has(h.term), inE = EX_SET.has(h.term);
@@ -1087,8 +1129,16 @@ window.DETECT = (function () {
       const nextT = testHits.filter((t) => t.i > h.i).map((t) => t.i).sort((a, b) => a - b)[0];
       const after = low.slice(h.i + h.len, Math.min(nextT === undefined ? low.length : nextT, h.i + h.len + 60, (low.indexOf("\n", h.i) < 0 ? low.length : low.indexOf("\n", h.i))));
       const first = (t) => { const p = t.search(POS), n = t.search(NEG); if (p < 0 && n < 0) return ""; if (n < 0 || (p >= 0 && p < n)) return "+ve"; return "-ve"; };
-      const res = first(after) || first(cl) || (labelled && !patientSaid(h.i) ? replyResult(h.i, name) : "") || BLANK + "ve";
-      const s = sideOfHit(h) || fallbackSide();
+      // "I did the compression test, distraction test, Adson test, Eden test, and the Eden test was positive, the
+      // Adson test was negative…" (clinic, 2026-09-21): tests are often listed first and their results given after.
+      // A result belongs to a test only when it stands between that test and the next one. The whole clause is a
+      // fallback only when it names no other test — it used to hand "positive" to every test in the list.
+      const othersInClause = testHits.some((t) => t !== h && t.term !== h.term && t.i >= low.indexOf(cl) && t.i < low.indexOf(cl) + cl.length);
+      const own = first(after);
+      const laterMention = !own && testHits.some((t) => t !== h && t.term === h.term && t.i > h.i);
+      if (laterMention) return;                                  // named again further on, with its result: that mention writes the line
+      const res = own || (othersInClause ? "" : first(cl)) || (labelled && !patientSaid(h.i) ? replyResult(h.i, name) : "") || BLANK + "ve";
+      const s = sideOfHit(h) || side(after.slice(0, 50)) || fallbackSide();
       push("objective", "Special test", `${name}${s ? " " + s : ""}: ${res}`);
       otherSideRepeat(h.i, name, s);
     });
@@ -1209,6 +1259,19 @@ window.DETECT = (function () {
       if (/\b(?:just |only |it'?s )?local(?:ized)?\b[^.?!\n]{0,40}|not radiating/.test(low) && /\bnot radiating|no radiat/.test(low)) push("objective", "Palpation", "Local pain, no radiating");
     }
 
+    {
+      const wk = /\bweak(?:ness)?(?: (?:in|of|at))?(?: (?:the|her|his))?(?: muscle power)?(?: (?:in|of|at))?\s+((?:right |left )?(?:finger|thumb|wrist|elbow|shoulder|neck|hip|knee|ankle|toe|trunk|grip)s?(?: (?:flex\w+|exten\w+|abduct\w+|adduct\w+|rotat\w+|dorsiflex\w+|plantar ?flex\w+|grip))?)(?:[^.\n]{0,12}?\blimited by (pain|tightness))?/.exec(low);
+      if (wk && !isQuestion(qLine(wk.index)) && !patientSaid(wk.index)) {
+        const what = wk[1].replace(/^(right|left) /, "").replace(/flexing/, "flexion").replace(/extending/, "extension"); const sdw = side(wk[0]) || fallbackSide();
+        const before = out.lines.length; push("objective", "Muscle power", `Weakness of ${sdw ? sdw + " " : ""}${what}${wk[2] ? " (limited by " + wk[2] + ")" : ""}`);
+        if (out.lines.length > before) out.lines = out.lines.filter((l) => !(l.heading === "Muscle power" && /^Weakness at (?:Rt\. |Lt\. )?(?:hand|finger|wrist|arm|leg|foot)$/i.test(l.line)));
+      }
+      const hy = /\bhypomobil\w+ (?:at|of|in)(?: the)? ((?:cervical|thoracic|lumbar) spine|c-?spine|t-?spine|l-?spine|si joint|sij|[ctl]\d(?:\s*-\s*[ctls]?\d)?)(?:\s+with\s+([^.\n]{3,70}))?/.exec(low);
+      if (hy && !isQuestion(qLine(hy.index))) push("objective", "PAIVMS", `Hypomobility at ${hy[1].replace(/^[ctl]\d/, (x) => x.toUpperCase())}${hy[2] ? " with " + hy[2].replace(/\b(her|his|their) /g, "").replace(/\bhand right hand\b/, "Rt. hand").replace(/\bright\b/g, "Rt.").replace(/\bleft\b/g, "Lt.").trim() : ""}`);
+      const mcp = /\btender\w*[^.\n]{0,40}?\b(palm\w*)[^.\n]{0,30}?\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)\s+(mcp|pip|dip)\b/.exec(low);
+      if (mcp) push("objective", "Palpation", `Tenderness at ${side(mcp[0]) || fallbackSide() || ""} palmar ${({ first: "1st", second: "2nd", third: "3rd", fourth: "4th", fifth: "5th" })[mcp[2]] || mcp[2]} ${mcp[3].toUpperCase()} area`.replace(/\s+/g, " "));
+    }
+
     // Diagnoses
     const dxSeen = new Set();
     pick(scan(entries(ALL_DX), low)).forEach((h) => {
@@ -1264,7 +1327,9 @@ window.DETECT = (function () {
       return o;
     };
     const HIST_SENT = /\b(tried|i did|i had|they did|last time|before|used to|went for|went to|previous|ago|at the hospital|the doctor (?:did|gave)|she did|he did|they put)\b|เคย|ก่อนหน้านี้|ที่ผ่านมา|หมอให้/;
-    const modHits = pick(scan(entries(MODALITIES), low)).filter((h) => !overlaps(h, exHits) && !patientSaid(h.i) && !isQuestion(sentenceOf(h.i)) && !HIST_SENT.test(sentenceOf(h.i)));
+    // only a conversation has a patient who says "I did physio before"; in the physio's own dictation "I did …" is today's treatment
+    const histSent = (sn) => HIST_SENT.test(labelled ? sn : sn.replace(/\bi did\b/g, " "));
+    const modHits = pick(scan(entries(MODALITIES), low)).filter((h) => !overlaps(h, exHits) && !patientSaid(h.i) && !isQuestion(sentenceOf(h.i)) && !histSent(sentenceOf(h.i)));
     const hasCombined = modHits.some((h) => h.term === "US combined with stim" || h.term === "US + IFC");
     const byTerm = {};
     modHits.forEach((h) => {
@@ -1275,7 +1340,11 @@ window.DETECT = (function () {
       if (h.term === "Stretching" && (/\b(feel|feels|felt|just|only|bit of|a little)\s+(a|the)?\s*$/.test(low.slice(Math.max(0, h.i - 14), h.i)) || /^\s+(in|behind|at|across|down|on|through)\b/.test(low.slice(h.i + h.len, h.i + h.len + 10)))) return;
       (byTerm[h.term] = byTerm[h.term] || []).push(h);
     });
-    Object.keys(byTerm).forEach((term) => { if (!V.TREATMENT_MODALITIES[term]) return; byTerm[term].sort((a, b) => a.i - b.i); out.heard.add(term); push("treatment", "", fillParams(V.TREATMENT_MODALITIES[term], byTerm[term], modHits)); });
+    Object.keys(byTerm).forEach((term) => {
+      if (!V.TREATMENT_MODALITIES[term]) return; byTerm[term].sort((a, b) => a.i - b.i); out.heard.add(term);
+      const h0 = byTerm[term][0]; const said = /^(Stretching|Massage|Nerve mobilization|Passive stretch|Stretching exercise)$/.test(term) ? /^\s*(?:for|at|on|of|to)\s+(?:the |her |his |their )?([a-z][a-z ,&\/-]{2,48}?)(?=\s*(?:$|[.\n;]|\bthen\b|\band then\b|\bnow\b|\bso\b))/.exec(low.slice(h0.i + h0.len, h0.i + h0.len + 70)) : null;
+      push("treatment", "", said ? `${term}: ${said[1].trim()}` : fillParams(V.TREATMENT_MODALITIES[term], byTerm[term], modHits));
+    });
     if (!modHits.some((h) => /traction/.test(h.term))) {
       const th = scan([["t", TRACTION]], low).filter((h) => !patientSaid(h.i) && !isQuestion(sentenceOf(h.i)));
       if (th.length) { const t = R === "Neck / cervical" ? "Neck traction" : "Pelvic traction"; out.heard.add(t); push("treatment", "", fillParams(V.TREATMENT_MODALITIES[t], th.map((h) => ({ term: t, i: h.i, len: h.len })), modHits)); }
