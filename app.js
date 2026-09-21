@@ -74,6 +74,9 @@
     if (/^\(/.test(t) && !/\)/.test(t)) return false;                        // an opened bracket that never closes: a cut sentence
     if (/\b(at|to|of|with|by|and|in|on|for|or|the|a|are|is|was|were|be|that|which)$/i.test(t)) return false;
     if (!/:/.test(t) && t.trim().split(/\s+/).length < 3) return false;
+    // what is left of "Carry heavy things pain VAS 6/10" or "able to do 10 reps" once the number is gone says nothing
+    // (owner, 2026-09-21: "able to do — I don't know what that means")
+    if (/\b(?:vas|nrs|pain scale|pain score)\s*:?\s*$/i.test(t) || /^(?:un)?able to (?:do|perform)\b.{0,12}$/i.test(t.trim())) return false;
     return true;
   }
   const romLine = (m) => `${m}:`;
@@ -156,6 +159,8 @@
     return { subjective: ["Chief complaint", ""], objective: ["Physical examinations", heading], analysis: ["Diagnosis", ""], plan: ["Physician's recommendations", ""],
       treatment: ["Treatments", ""], exercise: ["Treatments", "Exercise"], problem: null }[sec];
   }
+  // the same notes, give or take a few characters (a typo fixed, a space added): not worth a new read
+  const sameNotes = (a, b) => !!a && !!b && (a === b || (Math.abs(a.length - b.length) < 30 && a.slice(0, 120) === b.slice(0, 120)));
   function autoFill() {
     const text = $("transcript").value || "";
     let res = DETECT.run(text, S.region);
@@ -167,20 +172,28 @@
     // adopt the first diagnosis heard as the condition before placing lines, so it is not added twice
     // the condition is the first specific diagnosis heard; a generic one (muscle imbalance, poor posture)
     // only when nothing more specific was said
+    // Draft 36: once Claude has read these very notes, its reading IS the note — the rules' lines come out and
+    // stay out until the notes change (they were the source of "Radiating pain" when the physio said there was
+    // none, of a PMS area nobody said, of a cause cut in half). Region and side still come from the rules at once.
+    const aiOwns = sameNotes(S.aiFor, text.trim());
+    if (S.aiFor && !aiOwns) { S.aiFor = ""; retractSmart(); applyPack(); }   // these are no longer the notes Claude read
     const GENERIC = /^(?:rt\.|lt\.|both)?\s*(muscle imbalance|poor posture|postural dysfunction|muscle tightness|general muscle tightness|muscle tension|muscle spasm|muscle strain|overuse|swelling|scoliosis|itb tightness)$/i;
     const dxLines = res.lines.filter((l) => l.sec === "analysis");
     const heardDx0 = dxLines.find((l) => !GENERIC.test(l.line)) || dxLines[0];
+    let guessed = null;
+    if (aiOwns && (S.aiConds || []).length) { /* the diagnoses Claude read are on the tag: no second guess from the rules */ }
+    else {
     if (heardDx0 && (!S.condition || S.conditionAuto)) { const nm = heardDx0.line.replace(/^(Rt\.|Lt\.|Both) /, ""); if (nm !== S.condition) setCondition(nm, true); }
     else if (!heardDx0 && S.condition && S.conditionAuto && !S.conditionGuess) { S.condition = ""; S.conditionAuto = false; renderCondTag(); }
-    let guessed = null;
     if (!heardDx0 && (!S.condition || S.conditionGuess)) {
       const g = guessCondition(res);
       if (g && g.name !== S.condition) { setCondition(g.name, true); S.conditionGuess = true; guessed = g; }
       else if (!g && S.conditionGuess) { S.condition = ""; S.conditionAuto = false; S.conditionGuess = false; renderCondTag(); }
       else if (g) guessed = g;
     } else if (heardDx0) S.conditionGuess = false;
+    }
     const wanted = {};
-    res.lines.forEach((l) => {
+    if (!aiOwns) res.lines.forEach((l) => {
       const t = target(l.sec, l.heading); if (!t || !t[0]) return;
       let line = l.line;
       // the chosen condition is already in the box; do not add it again with a side
@@ -204,7 +217,7 @@
     });
     renderOutput(); scheduleSuggest(); syncChips();
     const st = $("fillstate");
-    if (st) st.textContent = !text.trim() ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.${guessed ? ` No diagnosis was said, so the condition is the clinic's closest match to these findings: ${guessed.name} (${guessed.matched} findings in common with ${guessed.n} charts) — remove it if that is not what you found.` : ""}` : "Nothing recognised yet — keep going, or use the options in section 2.";
+    if (st) st.textContent = !text.trim() || aiOwns ? "" : count ? `${count} line${count > 1 ? "s" : ""} filled into section 2 from these notes — check each one, then edit or delete freely.${guessed ? ` No diagnosis was said, so the condition is the clinic's closest match to these findings: ${guessed.name} (${guessed.matched} findings in common with ${guessed.n} charts) — remove it if that is not what you found.` : ""}` : "Nothing recognised yet — keep going, or use the options in section 2.";
     return count;
   }
   let fillT; const scheduleFill = () => { clearTimeout(fillT); fillT = setTimeout(autoFill, 350); };
@@ -463,15 +476,19 @@
     const b = document.createElement("b"); b.textContent = "Pain scale"; head.appendChild(b);
     w.appendChild(head);
     const row = document.createElement("div"); row.className = "chips";
-    const paint = () => { const cur = val("Pain scale"); row.querySelectorAll("button").forEach((btn) => btn.classList.toggle("on", btn.dataset.line === cur)); };
+    // two painful areas have two scores (physio feedback 2026-09-21: "4/10 for the arm, 7/10 for the low back —
+    // the pain scale needs to come up twice"): the line under the buttons holds them as written
+    const more = document.createElement("input"); more.type = "text"; more.placeholder = "More than one area? Write them here — Low back 7/10, Lt. elbow 4/10"; more.style.marginTop = "8px";
+    const paint = () => { const cur = val("Pain scale"); row.querySelectorAll("button").forEach((btn) => btn.classList.toggle("on", btn.dataset.line === cur)); more.value = /^\d{1,2}$/.test(cur) ? "" : cur.replace(/\n+/g, ", "); };
     for (let n = 0; n <= 10; n++) {
       const btn = document.createElement("button"); btn.type = "button"; btn.className = "chip sel";
       btn.textContent = String(n); btn.dataset.line = String(n); btn.dataset.pain = "1";
       btn.onclick = () => { const line = String(n); S.fields["Pain scale"] = val("Pain scale") === line ? "" : line; paint(); renderOutput(); };
       row.appendChild(btn);
     }
+    more.oninput = () => { S.fields["Pain scale"] = more.value.trim(); row.querySelectorAll("button").forEach((btn) => btn.classList.remove("on")); renderOutput(); };
     paint();
-    w.appendChild(row);
+    w.appendChild(row); w.appendChild(more);
     return w;
   }
 
@@ -563,7 +580,9 @@
     if (!auto && S.condition && S.condition !== name && S.conditionAuto === false && !(S.moreConditions || []).includes(S.condition)) (S.moreConditions = S.moreConditions || []).push(S.condition);
     S.moreConditions = (S.moreConditions || []).filter((c) => c !== name);
     S.condition = name; S.conditionAuto = !!auto;
-    if (!hasLine(f, name)) append(f, name, "", true);
+    if (!auto) S.conditionGuess = false;   // a condition the physio picked is not "the closest match in the charts" (the tag kept saying so)
+    // (a fuller line for the same diagnosis may already be in the box: "Mechanical low back pain, Rt. > Lt.")
+    if (!hasLine(f, name) && !val(f).split("\n").some((l) => l.trim().toLowerCase().startsWith(name.toLowerCase()))) append(f, name, "", true);
     const r = regionForCondition(name);
     if (r && r !== S.region && (r !== "General / other" || !S.region || S.region === "General / other")) { S.region = r; $("region").value = r; S.regionFromCond = r !== "General / other"; }
     // spine, posture and whole-body conditions have no side: scoliosis, low back, neck, MPS…
@@ -608,6 +627,11 @@
                          // "whenever I put in a condition, everything would come up" — the hand-written
                          // routine AND the lines read from this condition's own charts, minus blanks)
     const chips = {};
+    // Draft 36 (owner + physio, 2026-09-21: "when did we ever mention a dynamometer?", "able to do — what does that
+    // mean?"): the condition's usual lines are the starting point when the physio begins from a condition. Once
+    // Claude has written the note from the session notes, the note holds what was said; the usual lines step back
+    // (they are still one tap away under each box) and return if the notes are cleared.
+    const notesOwnTheNote = !!S.aiFor;
     // vetted = the export (or the hand-written pack) already filed these lines under this exact
     // region; the guard is for the region-free lines only ("above knee level" is a lumbar
     // fingertip measure, and the body-word guard would misread it as a knee line)
@@ -622,7 +646,7 @@
         (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" });
       });
     };
-    if (S.condition) {
+    if (S.condition && !notesOwnTheNote) {
       const handKey = V.CONDITION_PACKS ? Object.keys(V.CONDITION_PACKS).find((re) => new RegExp(re, "i").test(S.condition)) : null;
       const hit = SG ? findCondition(currentCondition()) : null;
       // No region chosen ("General / other" — MPS, muscle imbalance, poor posture…): the region
@@ -683,7 +707,8 @@
       const keep = new Set(testList);
       val(field).split("\n").forEach((l) => { const tl = l.trim(), n = testName(tl); if (BLANK_TEST.test(tl) && S.prefilled.has(n) && !keep.has(n)) { removeLine(field, tl); S.prefilled.delete(n); } });
     }
-    const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /(\+ve|-ve|:)\s*$/.test(l)).map(testName));
+    // any line already written for a test counts, whatever follows the colon ("SLR: no numbness down the leg")
+    const have = new Set(val(field).split("\n").map((l) => l.trim()).filter((l) => /:/.test(l)).map((l) => testName(l.slice(0, l.indexOf(":") + 1))));
     S.prefilled = S.prefilled || new Set();
     testList.forEach((name) => { if (have.has(name)) return; append(field, `${name}${S.side && S.side !== "Both" ? " " + S.side : ""}:`, heading, true); S.prefilled.add(name); });
     renderOutput();
@@ -827,26 +852,35 @@
     a.onclick = () => { S.showAll = !S.showAll; renderBuilder(); };
     host.appendChild(a);
   }
+  // Palpation: the finding first, then every muscle of the region to tap ("Trigger point" — but where?).
+  // Used by the SOAP note and, since draft 36, by the New patient's record too (physio feedback 2026-09-21:
+  // "you just click on trigger point but where? … the muscles are there for muscle power, they should be here as well")
+  function palpationPicker(b, field, heading) {
+    const P = profile();
+    const groups = P.muscle_groups.filter((g) => V.MUSCLES[g]);
+    let finding = V.PALPATION_FINDINGS[1] || V.PALPATION_FINDINGS[0], side = S.side || "";
+    const findRow = document.createElement("div"); findRow.className = "chips";
+    const musWrap = document.createElement("div");
+    const palpLineX = (f, m, s) => (V.MUSCLES["Ligaments & structures"] || []).includes(m) ? `${f} at ${s ? s + " " : ""}${m}` : palpLine(f, m, s);
+    const redraw = () => {
+      musWrap.innerHTML = ""; musWrap.appendChild(sub(`${finding}${side ? " · " + side : ""} — at which muscle?`));
+      groups.forEach((g) => { if (groups.length > 1) musWrap.appendChild(sub(g)); musWrap.appendChild(chips(V.MUSCLES[g], field, heading, (m) => palpLineX(finding, m, side))); });
+    };
+    V.PALPATION_FINDINGS.forEach((f) => { const fb = document.createElement("button"); fb.type = "button"; fb.className = "chip sel" + (f === finding ? " on" : ""); fb.textContent = f; fb.onclick = () => { finding = f; findRow.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === fb)); redraw(); }; findRow.appendChild(fb); });
+    const sideRow = document.createElement("div"); sideRow.className = "row3";
+    const sideSel = selectEl(["", ...V.SIDES], (e) => { side = e.target.value; redraw(); }); sideSel.value = side; sideRow.appendChild(sideSel);
+    b.appendChild(findRow); b.appendChild(sideRow); b.appendChild(musWrap); redraw();
+    if (V.PALPATION_NORMALS) { b.appendChild(sub("Nothing found")); b.appendChild(chips(V.PALPATION_NORMALS, field, heading)); }
+    const circ = document.createElement("button"); circ.type = "button"; circ.className = "chip"; circ.textContent = "+ Circumference line";
+    circ.onclick = () => append(field, circLine(), heading); b.appendChild(circ);
+  }
   function objectiveExtras(host, field) {
     const region = S.region, P = profile();
     let [d, b] = details("Observation");
     observationPicker(b, field, "Observation", [...P.observation, ...(V.OBSERVATION_BY_REGION[region] || [])]); showAllLink(b); host.appendChild(d);
 
     [d, b] = details(isGeneral() ? "Palpation — pick the finding, then the muscle" : `Palpation — pick the finding, then the muscle (${S.region.toLowerCase()})`);
-    const groups = P.muscle_groups.filter((g) => V.MUSCLES[g]);
-    let finding = V.PALPATION_FINDINGS[1] || V.PALPATION_FINDINGS[0], side = S.side || "";
-    const musclesHere = [...new Set(groups.flatMap((g) => V.MUSCLES[g]))];
-    const findRow = document.createElement("div"); findRow.className = "chips";
-    const musWrap = document.createElement("div");
-    const palpLineX = (f, m, s) => (V.MUSCLES["Ligaments & structures"] || []).includes(m) ? `${f} at ${s ? s + " " : ""}${m}` : palpLine(f, m, s);
-    const redraw = () => { musWrap.innerHTML = ""; musWrap.appendChild(sub(`${finding}${side ? " · " + side : ""} — at which muscle?`)); musWrap.appendChild(chips(musclesHere, field, "Palpation", (m) => palpLineX(finding, m, side))); };
-    V.PALPATION_FINDINGS.forEach((f) => { const fb = document.createElement("button"); fb.type = "button"; fb.className = "chip sel" + (f === finding ? " on" : ""); fb.textContent = f; fb.onclick = () => { finding = f; findRow.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === fb)); redraw(); }; findRow.appendChild(fb); });
-    const sideRow = document.createElement("div"); sideRow.className = "row3";
-    const sideSel = selectEl(["", ...V.SIDES], (e) => { side = e.target.value; redraw(); }); sideSel.value = side; sideRow.appendChild(sideSel);
-    b.appendChild(findRow); b.appendChild(sideRow); b.appendChild(musWrap); redraw();
-    if (V.PALPATION_NORMALS) { b.appendChild(sub("Nothing found")); b.appendChild(chips(V.PALPATION_NORMALS, field, "Palpation")); }
-    const circ = document.createElement("button"); circ.type = "button"; circ.className = "chip"; circ.textContent = "+ Circumference line";
-    circ.onclick = () => append(field, circLine(), "Palpation"); b.appendChild(circ);
+    palpationPicker(b, field, "Palpation");
     host.appendChild(d);
 
     [d, b] = details("Range of motion");
@@ -1031,6 +1065,8 @@
         observationPicker(b, f, "", [...profile().observation, ...(V.OBSERVATION_BY_REGION[S.region] || [])]); host.appendChild(d);
       } else if (f === "Muscle power") {
         const [d, b] = details("Options for " + f); musclePowerPicker(b, f, ""); host.appendChild(d);
+      } else if (f === "Palpation") {
+        const [d, b] = details("Options for " + f + " — pick the finding, then the muscle"); palpationPicker(b, f, ""); host.appendChild(d);
       } else if (CHIPS_FOR[f]) { const [d, b] = details("Options for " + f); b.appendChild(chips(CHIPS_FOR[f](), f, "")); host.appendChild(d); }
       if (f === "Treatment" || f === "Treatments" || f === "Physiotherapy Treatments") treatmentExtras(host, f);
     });
@@ -1351,7 +1387,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         .filter((l) => l && !PHOTO_PII.test(l) && (fromNotes || !PHOTO_ADMIN.test(l)) && !/^(?:\[\?\]|\.{2,}|…|-|n\/?a|no|yes|now)$/i.test(l) && /[A-Za-z0-9ก-๙]/.test(l.replace(/\[\?\]/g, "")))
         // a reminder the physio jotted down ("describe about your pain?") is not a finding; a scrap is not a line
         // "7/10", "E 10", "4/5" are short but complete: the 4-letter scrap rule is for the wordy boxes only (it silently dropped every pain score in drafts 27-29)
-        .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= (/^(chief_complaint|present_history|past_history|observation|diagnosis|plan|other)$/.test(k) ? 4 : 2) && (l.match(/\[\?\]/g) || []).length <= 1);
+        .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= (/^(chief_complaint|present_history|past_history|observation|diagnosis|plan|other|functional_limitation)$/.test(k) ? 4 : 2) && (l.match(/\[\?\]/g) || []).length <= 1);
       o[k] = lines.filter((l) => {
         if (k !== "active_rom" && k !== "passive_rom" && PHOTO_ROM.test(l)) { moved.active_rom.push(l); return false; }
         if (k !== "pain_score" && /^\d{1,2}\s*\/\s*10$/.test(l)) { moved.pain_score.push(l); return false; }
@@ -1361,7 +1397,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         // "Low back pain radiating down Lt leg, 3 months" IS the complaint even though it says "radiating": a line that names
         // a body part stays; only behaviour with no body part ("pain with prolonged sitting") moves to the history of the episode
         if (k === "chief_complaint" && PHOTO_BEHAVE.test(l) && !/^pain area/i.test(l) && !PHOTO_BODY.test(l)) { moved.present_history.push(l); return false; }
-        if (k === "present_history" && PHOTO_PAST.test(l)) { moved.past_history.push(l); return false; }
+        // (notes read by Claude are already sorted by meaning: "tried massage before, no change" belongs to this episode)
+        if (k === "present_history" && !fromNotes && PHOTO_PAST.test(l)) { moved.past_history.push(l); return false; }
         // a chief complaint names a body part or a pain; anything else the model left there is a note about the episode
         if (k === "chief_complaint" && !/pain|ปวด|เจ็บ|ache|sore|stiff|ตึง|numb|ชา|injur|sprain|strain|hip|knee|back|neck|shoulder|ankle|foot|heel|elbow|wrist|hand|finger|leg|arm|thigh|calf|shin|spine|head|jaw|rib|chest|groin|glute|hamstring|คอ|บ่า|ไหล่|สะบัก|หลัง|เอว|เข่า|สะโพก|ข้อเท้า|เท้า|ขา|แขน|ศอก|ข้อมือ|น่อง|area/i.test(l)) { moved.present_history.push(l); return false; }
         // one unreadable word in a line with almost nothing else says nothing
@@ -1375,7 +1412,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     o.past_history = [...(o.past_history || []), ...moved.past_history];
     o.present_history = [...(o.present_history || []), ...moved.present_history];
     // more than two lines of "chief complaint" means the model dumped its notes there: the rest is history of this episode
-    if ((o.chief_complaint || []).length > 2) { o.present_history = [...o.chief_complaint.slice(2), ...o.present_history]; o.chief_complaint = o.chief_complaint.slice(0, 2); }
+    const ccMax = fromNotes ? 3 : 2;   // a session can be about two or three problems; a paper form has one complaint box
+    if ((o.chief_complaint || []).length > ccMax) { o.present_history = [...o.chief_complaint.slice(ccMax), ...o.present_history]; o.chief_complaint = o.chief_complaint.slice(0, ccMax); }
     // one plain score is the pain scale; several are kept as written
     const out = {}; Object.keys(o).forEach((k) => { out[k] = [...new Set(o[k])].join("\n"); });
     return out;
@@ -1387,8 +1425,21 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
       if (!text) return 0;
       const t = target(sec, heading); if (!t || !t[0]) return 0;
       let n = 0;
-      text.split(/\n+/).map((l) => l.replace(/^(?:[•·*]|-(?!\s*ve\b))\s*/i, "").trim())   /* a list dash goes, the minus of "-ve" stays */.filter(Boolean).forEach((line) => { if (heading === "Special test" && /(\+ve|-ve)\s*$/.test(line)) removeBlankTest(t[0], line); if (!hasLine(t[0], line)) { append(t[0], line, t[1] || ""); if (rec) rec.push([t[0], line]); n++; } });
+      text.split(/\n+/).map((l) => l.replace(/^(?:[•·*]|-(?!\s*ve\b))\s*/i, "").trim())   /* a list dash goes, the minus of "-ve" stays */.filter(Boolean).forEach((line) => { if (heading === "Special test" && /(\+ve|-ve)\s*$/.test(line)) removeBlankTest(t[0], line); dropStubFor(t[0], line); if (!hasLine(t[0], line)) { append(t[0], line, t[1] || ""); if (rec) rec.push([t[0], line]); n++; } });
       return n;
+    };
+    // "Trunk rotation Lt.: more pain than Rt." makes the empty "Trunk rotation:" above it pointless
+    // (physio feedback 2026-09-21: "why do you come up with trunk rotation as a blank one again?")
+    function dropStubFor(field, line) {
+      const m = /^([^:]{3,60}?)(?:\s+(?:Rt\.|Lt\.|Both))?\s*:\s*\S/.exec(line); if (!m) return;
+      const head = m[1].trim().toLowerCase();
+      val(field).split("\n").forEach((l) => { const tl = l.trim(); const s = /^([^:]+?)(?:\s+(?:Rt\.|Lt\.|Both))?\s*:\s*$/.exec(tl); if (s && s[1].trim().toLowerCase() === head) removeLine(field, tl); });
+    }
+    // a box of the form being written that has no section of its own in target()
+    const putField = (field, text) => {
+      if (!text || !V.OUTPUT_FORMATS[S.format].includes(field)) return 0;
+      let k = 0; text.split(/\n+/).map((l) => l.trim()).filter(Boolean).forEach((line) => { if (!hasLine(field, line)) { append(field, line, ""); if (rec) rec.push([field, line]); k++; } });
+      return k;
     };
     let n = 0;
     n += put("subjective", "", str("chief_complaint"));
@@ -1397,10 +1448,10 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     // a single plain score goes on the New patient's record pain scale; anything richer ("rest 2/10, run 6/10") is kept as written
     const ps = str("pain_score"), pm = /^(?:vas\s*)?(\d{1,2})\s*\/\s*10$/i.exec(ps);
     if (ps) {
-      if (pm && +pm[1] <= 10 && S.format === "New patient's record") { S.fields["Pain scale"] = pm[1]; n++; }
+      if (pm && +pm[1] <= 10 && S.format === "New patient's record") { S.fields["Pain scale"] = pm[1]; if (rec) rec.push(["Pain scale", pm[1]]); n++; }
       else if (pm && +pm[1] <= 10) n += put("objective", "", `VAS ${pm[1]}/10`);
-      // several scores ("rest 2/10", "run 6/10"): the New patient's record has one pain-scale row of buttons, so they are kept as written in the history of the episode
-      else if (S.format === "New patient's record") n += put("subjective", "PresentHistory", ps.split(/\n+/).map((l) => (/vas|pain/i.test(l) ? l : "Pain score: " + l)).join("\n"));
+      // several scores ("Low back 7/10", "Lt. elbow 4/10"): written out on the line under the pain-scale buttons
+      else if (S.format === "New patient's record") { const all = ps.split(/\n+/).map((l) => l.trim()).filter(Boolean).join(", "); S.fields["Pain scale"] = all; if (rec) rec.push(["Pain scale", all]); n++; }
       else n += put("objective", "", ps.split(/\n+/).map((l) => (/vas|pain/i.test(l) ? l : "Pain score: " + l)).join("\n"));
     }
     n += put("objective", "Observation", str("observation"));
@@ -1408,6 +1459,10 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     n += put("objective", "Active range of motions", str("active_rom"));
     n += put("objective", "Passive range of motions", str("passive_rom"));
     n += put("objective", "Muscle power", str("muscle_power"));
+    n += put("objective", "PAIVMS", str("paivms"));
+    n += putField("Functional limitation", str("functional_limitation")) || put("subjective", "PresentHistory", str("functional_limitation"));
+    { const opts = new Set([...(V.IMPAIRMENTS || []), ...(V.PARTICIPATION_RESTRICTION || [])].map((x) => x.toLowerCase()));   // the clinic's own tick-box wording only
+      n += putField("Problem list", str("problem_list").split(/\n+/).filter((l) => opts.has(l.trim().toLowerCase())).join("\n")); }
     n += put("objective", "Special test", str("special_test"));
     n += put("objective", "Functional test", str("functional_test"));
     n += put("objective", "Neurological examination", str("neurological"));
@@ -1477,18 +1532,28 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   // back out if the notes change. If the free allowance is used up or Google is busy, nothing happens:
   // the rules' result simply stands.
   const NOTES_PROMPT = `You are helping a physiotherapist at Bangkok Physiotherapy Center write a patient chart. Below are their session NOTES: a dictation, typed notes, or a transcript of the whole session (Thai, English or mixed). A transcript may have no speaker labels and misheard words ("the right hit" = right hip, "SI joy" = SI joint).
-Sort every clinically relevant fact into the sections below.
+Write the COMPLETE new-patient chart from these notes, the way a careful senior physiotherapist would after listening to the whole session. You are the author of the note: everything clinically relevant that was said must be in it, in the right section, and nothing that was not said.
 
 RULES
-- Only what is stated. Never add, infer, average or tidy a number: degrees, grades, n/10, sets and reps, minutes, MHz, w/cm2 are copied exactly or left out.
-- A physio's question is not a finding; the patient's answer is. What the physio explains to the patient about the problem is the diagnosis / analysis. Small talk is nothing.
-- Write short chart lines in English in the clinic's style: "Rt." / "Lt."; "Tenderness at Rt. upper trapezius"; "Knee flexion Rt.: 120° with pain"; "Trunk extension: pain at end range"; "full ROM" ONLY if the physio said the range was full; "Quadriceps Rt.: Grade 4/5"; special tests as "McMurray test Rt.: -ve"; exercises as "Wall sit — 10 x 3 sets"; treatment as the modality with the parameters that were said.
-- chief_complaint: the main problem only (where it hurts, for how long). present_history: how it started, what makes it worse or better, quality of the pain, work / sport load. past_history: underlying disease, surgery, accidents, old injuries, earlier treatment, imaging, regular medicine ("No surgery" when the patient says none).
-- No names, phone numbers or other identifying details.
-- One fact per line. Do not repeat a fact that is already listed under ALREADY IN THE NOTE, even in other words.
+- Only what is stated. Never add, infer, average or tidy a number: degrees, grades, n/10, sets and reps, minutes, MHz, Hz, w/cm2, cm are copied exactly or left out. Never write a test, a measurement, a device or a treatment that the notes do not mention.
+- A negative is a negative: "no radiating pain", "ไม่มีอาการปวดร้าวลงขา" must never become "Radiating pain". Write it as the negative finding it is.
+- A physio's question is not a finding; the patient's answer is. What the physio explains to the patient about the problem is the diagnosis / analysis. Small talk, scheduling, prices and packages are nothing.
+- Speech recognition mishears. Thai dictation often writes the number seven "เจ็ด" as "เจ็บ": "ปวดเจ็บเต็ม 10" is 7/10. English recorders mishear body parts ("the right hit" = right hip). Read for meaning.
+- A patient can have more than one problem (for example low back pain AND an old elbow problem). Keep them apart: say which area every complaint, score, finding and treatment belongs to. The treatment area is the area the physio said it was applied to, never a guess.
+- Write short chart lines in English in the clinic's style: "Rt." / "Lt."; "Tenderness at Rt. upper trapezius"; "Tightness at both lumbar paraspinals, Rt. > Lt."; "Knee flexion Rt.: 120° with pain"; "Trunk extension: pain at initial range"; "full ROM" ONLY if the physio said the range was full; "Quadriceps Rt.: Grade 4/5"; special tests as "SLR Rt.: -ve"; exercises as "Wall sit — 10 x 3 sets"; treatment as the modality, its area, and only the parameters that were said ("PMS: low back").
+- chief_complaint: the main problem(s) only, one line each: where it hurts and for how long ("Low back pain both sides, 6 months"). At most three lines.
+- present_history: a full account, one fact per line: onset and how it started, the course since then, what makes it worse and better, the quality of the pain, whether it radiates, sleep / morning stiffness, work, sport and training load, what the patient has already tried for it, and the patient's goal. A ten-minute interview gives eight to fifteen lines, not two.
+- past_history: underlying disease, surgery, accidents, old injuries and other long-standing problems with their current state ("Lt. elbow pain, long-standing: same pain and weakness"), earlier treatment, imaging, regular medicine ("No surgery" when the patient says none).
+- pain_score: every score that was said, with its area or activity when there is more than one ("Low back 7/10 on movement", "Lt. elbow 4/10"). Only scores really said.
+- muscle_power: what was tested and how, as said ("Isometric biceps curl Lt.: weak with pain", "Hip flexor Lt.: weak"). functional_test: the movements or tasks the physio watched (squat, sit to stand, single leg stance) with what was seen.
+- functional_limitation: what the patient cannot do or has trouble doing in daily life, work or sport because of the problem ("Pain on standing up after sitting", "Cannot continue squat training").
+- diagnosis: the clinical name only, the main problem first, one per line, six words at most, with the side when it has one ("Mechanical low back pain", "Lt. lateral epicondylitis"). No sentences, no contributing findings (they have their own sections), and what was ruled out is not a diagnosis.
+- problem_list: only items from the PROBLEM LIST OPTIONS given at the end, copied exactly, that the findings support.
+- No names, phone numbers or other identifying details. Never "he/she": leave the subject out or write "Pt.".
+- One fact per line, each fact once, in the single best section.
 
 Return JSON only, with exactly these keys (strings; lines separated by \\n; "" when nothing):
-{"chief_complaint":"","present_history":"","past_history":"","pain_score":"","observation":"","palpation":"","active_rom":"","passive_rom":"","muscle_power":"","special_test":"","functional_test":"","neurological":"","diagnosis":"","plan":"","treatment":"","exercise":""}`;
+{"chief_complaint":"","present_history":"","past_history":"","pain_score":"","observation":"","palpation":"","active_rom":"","passive_rom":"","muscle_power":"","paivms":"","special_test":"","functional_test":"","neurological":"","diagnosis":"","plan":"","treatment":"","exercise":"","functional_limitation":"","problem_list":""}`;
   const smart = { timer: null, last: "", busy: false, at: 0, quietUntil: 0, tries: 0 };
   const smartState = (t) => { const el = $("smartstate"); if (el) el.textContent = t || ""; };
   function scheduleSmart() {
@@ -1499,21 +1564,43 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   function retractSmart() {
     (S.aiLines || []).forEach(([f, l]) => { if (hasLine(f, l)) removeLine(f, l); updateTa(f); });
     S.aiLines = [];
+    if ((S.aiConds || []).length) { S.moreConditions = (S.moreConditions || []).filter((c) => !S.aiConds.includes(c)); S.aiConds = []; renderCondTag(); }
+  }
+  // The diagnoses Claude read go on the condition tag as well as in the Diagnosis box (physio, 2026-09-21: "it puts
+  // the diagnosis in the box but not on the top thing", "we can't put in two conditions"). The main one drives the
+  // region; a condition the physio picked by hand always stays the main one.
+  function adoptAiDiagnoses(dxText, rec) {
+    // the tag carries the name only: "Mechanical low back pain both sides, Rt. > Lt., with L4-L5 stiffness" -> its first part;
+    // "No indication of disc involvement" is not a condition
+    const names = [...new Set(String(dxText || "").split(/\n+/).map((l) => l.trim().split(/\s*[,;(]\s*|\s+(?:with|due to|secondary to|from)\s+/i)[0].trim())
+      .filter((l) => l && l.length <= 60 && !/^(?:no|not|nil|without|r\/o|rule[ds]? out|negative|unlikely)\b/i.test(l)))].slice(0, 3);
+    S.aiConds = []; if (!names.length) return;
+    const words = (t) => new Set(String(t).toLowerCase().replace(/[^a-zก-๙ ]+/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !/^(pain|with|from|left|right|both|side|syndrome|chronic|acute)$/.test(w)));
+    const same = (a, b) => { const A = words(a), B = words(b); return [...A].some((w) => B.has(w)); };
+    const manual = S.condition && !S.conditionAuto;
+    S.moreConditions = S.moreConditions || [];
+    names.forEach((nm, i) => {
+      if (manual && same(nm, S.condition)) {   // the physio already chose this one, in the clinic's own wording: no second line for it
+        const at = rec.findIndex(([f, l]) => f === dxField() && l.startsWith(nm)); if (at >= 0) { removeLine(dxField(), rec[at][1]); rec.splice(at, 1); }
+        return;
+      }
+      if (!manual && i === 0) { setCondition(nm, true); S.conditionGuess = false; S.aiConds.push(nm); return; }
+      if (nm !== S.condition && !S.moreConditions.some((c) => same(c, nm))) { S.moreConditions.push(nm); S.aiConds.push(nm); }
+    });
+    renderCondTag();
   }
   async function runSmart() {
     const text = $("transcript").value.trim();
     if (!text) { if ((S.aiLines || []).length) { retractSmart(); renderOutput(); } smart.last = ""; smartState(""); return; }
     if (text.length < 40 || smart.busy || text === smart.last || Date.now() < smart.quietUntil) return;
-    // a few characters changed since the last read: not worth one of the day's free reads
-    if (smart.last && Math.abs(text.length - smart.last.length) < 30 && text.slice(0, 120) === smart.last.slice(0, 120)) return;
+    // a few characters changed since the last read: not worth another read
+    if (sameNotes(smart.last, text)) return;
     const wait = 20000 - (Date.now() - smart.at); if (wait > 0) { smart.timer = setTimeout(runSmart, wait); return; }
     smart.busy = true; smart.at = Date.now(); const sent = text;
-    smartState("Reading the notes for anything the first pass missed…");
+    smartState(sent.length > 6000 ? "Reading the whole session — the note below is being written from it (a long transcript takes up to a minute)…" : "Reading the notes — the note below is being written from them…");
     try {
-      const mine = new Set((S.aiLines || []).map(([f, l]) => f + "\u0000" + l.trim()));
-      const already = V.OUTPUT_FORMATS[S.format].map((f) => { const ls = val(f).split("\n").map((l) => l.trim()).filter((l) => l && !mine.has(f + "\u0000" + l) && !BLANK_TEST.test(l)); return ls.length ? f + ": " + ls.join(" | ") : ""; }).filter(Boolean).join("\n");
       const res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, redirect: "follow",
-        body: JSON.stringify({ notes: sent.slice(0, 60000), prompt: NOTES_PROMPT + "\n\nALREADY IN THE NOTE:\n" + (already || "(nothing yet)") }) });
+        body: JSON.stringify({ notes: sent.slice(0, 60000), prompt: NOTES_PROMPT + "\n\nPROBLEM LIST OPTIONS: " + [...(V.IMPAIRMENTS || []), ...(V.PARTICIPATION_RESTRICTION || [])].join(" | ") }) });
       const j = await res.json();
       window.__bpcSmart = { at: new Date().toISOString(), model: j.model || "", error: j.error || "", skipped: j.skipped || [] };   // for troubleshooting only
       if (!j.text) {
@@ -1523,11 +1610,15 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
       }
       smart.tries = 0;
       if ($("transcript").value.trim() !== sent) { smartState(""); return; }          // the notes changed while Google was reading: this answer is stale
-      const r = JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, ""));
+      const raw = String(j.text), a = raw.indexOf("{"), z = raw.lastIndexOf("}");
+      const r = JSON.parse(a >= 0 && z > a ? raw.slice(a, z + 1) : raw);
+      // Claude's reading is the note: its earlier lines, the rules' lines and the condition's usual lines step back first
       retractSmart();
+      S.aiFor = sent; autoFill(); applyPack();
       const rec = []; const n = placePhotoFields(r, rec, true); S.aiLines = rec; smart.last = sent;
+      adoptAiDiagnoses(cleanPhotoReading(r, true).diagnosis, rec);
       renderBuilder(); renderOutput();
-      smartState(n ? `${n} more line${n === 1 ? "" : "s"} added from the notes by the second, smarter read — check each one.` : "");
+      smartState(n ? `Note written from these notes — ${n} line${n === 1 ? "" : "s"}. Check each one against what was said, then edit or delete freely.` : "");
     } catch (err) { console.error(err); smartState(""); }
     finally { smart.busy = false; }
   }
