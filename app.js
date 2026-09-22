@@ -631,7 +631,7 @@
     // mean?"): the condition's usual lines are the starting point when the physio begins from a condition. Once
     // Claude has written the note from the session notes, the note holds what was said; the usual lines step back
     // (they are still one tap away under each box) and return if the notes are cleared.
-    const notesOwnTheNote = !!S.aiFor;
+    const notesOwnTheNote = !!S.aiFor || !!S.photoRead;
     // vetted = the export (or the hand-written pack) already filed these lines under this exact
     // region; the guard is for the region-free lines only ("above knee level" is a lumbar
     // fingertip measure, and the body-word guard would misread it as a knee line)
@@ -1297,6 +1297,8 @@ HOW TO SORT (examples of shorthand)
 - diagnosis: the physio's impression or the condition named (e.g. "PFPS", "ITB syndrome", "MPS").
 - plan: goals, focus list, advice, things to do next ("thoracic mobility", "posture training", "core stabilize").
 - treatment: modalities or manual treatment given. exercise: exercises prescribed, with their dose.
+- A mark, circle, arrow or hatching on the body diagram is an observation of the pain area: put it in observation ("Pain marked: circle on Rt buttock"), and name the area itself in chief_complaint.
+- Do not write the same fact in two sections, and do not write the date of the assessment, the therapist's initials or the form's own headings.
 - other: handwriting you could read but could not place. Nothing readable may be dropped.
 
 Return JSON only, with exactly these keys (all strings; separate lines with \\n; empty string when nothing was written):
@@ -1342,6 +1344,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     // the good free model is sometimes "busy"; the weak one is never used for handwriting, so say so and let the physio try again
     // "busy" also when the good models were refused for today's free allowance (429 quota) and the last error is about some other model
     if (!j.text && (j.busy || /\b(503|429)\b|high demand|quota/i.test(String(j.error || "") + " " + JSON.stringify(j.skipped || [])))) { const e = new Error("Google's free handwriting reader is busy or has used up today's free reads — try Photo of chart again in a few minutes."); e.busy = true; throw e; }
+    // an empty answer with no reason at all (measured: 1 chart in 21) is worth one more try before giving up
+    if (!j.text && !j.error && (attempt || 0) < 2) { ocrState("The handwriting reader gave no answer — trying again…"); await new Promise((r) => setTimeout(r, 4000)); return askRelay(b64, (attempt || 0) + 1); }
     if (j.error || !j.text) throw new Error("The handwriting reader did not answer (" + String(j.error || "empty").slice(0, 180) + ")");
     try { return JSON.parse(String(j.text).replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
   }
@@ -1379,8 +1383,13 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
   const PHOTO_PAST = /accident|อุบัติเหตุ|surger|operat|ผ่าตัด|\bago\b|ปีก่อน|ปีที่แล้ว|\bmri\b|x-?ray|ultrasound scan|\bct\b|fracture|กระดูกหัก|previous|treated before|เคยรักษา|เคยทำกายภาพ|underlying|โรคประจำตัว|medication|medicine|painkiller/i;
   const PHOTO_BEHAVE = /stairs?|บันได|sitting|นั่ง|walking|เดิน|running|วิ่ง|standing|ยืน|worse|better|aggravat|eas(?:e|ing)|\brest\b|cause unknown|don'?t know (?:the )?cause|ไม่รู้สาเหตุ|\btense\b|\btight\b|\bdull\b|\bsharp\b|radiat|numb|ชา|ร้าว|morning|night|กลางคืน/i;
   const PHOTO_BODY = /\b(hip|knee|back|neck|shoulder|ankle|foot|heel|elbow|wrist|hand|finger|thumb|leg|arm|thigh|calf|shin|spine|head|jaw|rib|chest|groin|glute|hamstring|lumbar|cervical|thoracic)s?\b|คอ|บ่า|ไหล่|สะบัก|หลัง|เอว|เข่า|สะโพก|ข้อเท้า|เท้า|ขา|แขน|ศอก|ข้อมือ|น่อง/i;
+  // a mark on the body diagram is an observation of the pain area, not a complaint and not history
+  // (21 real charts, 2026-09-22: "Pain marked: circle on Rt buttock" landed in three different boxes)
+  const PHOTO_MARK = /^pain (?:marked|area marked)\b|^(?:mark|marked|circle|circled|x marked|arrow|scribble|hatching)\b.{0,12}\bon\b|on (?:the )?(?:body |posterior |anterior |side-view )?diagram/i;
+  // the date of the visit, the form's own headings and the therapist's initials are not findings
+  const PHOTO_META = /^(?:assessment |visit )?date\b|^\d{1,2}[ \/-](?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?[ \/-]?\d{2,4}\.?$|^(?:pt|physio(?:therapist)?)'?s? (?:name|initials|signature)/i;
   function cleanPhotoReading(r, fromNotes) {
-    const o = {}; const moved = { active_rom: [], pain_score: [], past_history: [], present_history: [] };
+    const o = {}; const moved = { active_rom: [], pain_score: [], past_history: [], present_history: [], observation: [] };
     Object.keys(r || {}).forEach((k) => {
       const lines = String(r[k] == null ? "" : r[k]).split(/\n+/).map((l) => l.replace(PHOTO_FILLER, "").trim())
         .map((l) => l.replace(/^[-–•·*]\s*(?!ve\b)/i, "").replace(/\s*[;,]\s*$/, "").trim())
@@ -1389,6 +1398,8 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         // "7/10", "E 10", "4/5" are short but complete: the 4-letter scrap rule is for the wordy boxes only (it silently dropped every pain score in drafts 27-29)
         .filter((l) => !/\?\s*$/.test(l) && !/:\s*$/.test(l) && l.replace(/\[\?\]|[^A-Za-z0-9ก-๙]/g, "").length >= (/^(chief_complaint|present_history|past_history|observation|diagnosis|plan|other|functional_limitation)$/.test(k) ? 4 : 2) && (l.match(/\[\?\]/g) || []).length <= 1);
       o[k] = lines.filter((l) => {
+        if (PHOTO_META.test(l)) return false;
+        if (k !== "observation" && PHOTO_MARK.test(l)) { moved.observation.push(l); return false; }
         if (k !== "active_rom" && k !== "passive_rom" && PHOTO_ROM.test(l)) { moved.active_rom.push(l); return false; }
         if (k !== "pain_score" && /^\d{1,2}\s*\/\s*10$/.test(l)) { moved.pain_score.push(l); return false; }
         if (k === "pain_score" && !/\d{1,2}\s*\/\s*10/.test(l)) return false;   // only a score really written as n/10
@@ -1407,6 +1418,7 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         return true;
       });
     });
+    o.observation = [...(o.observation || []), ...moved.observation];
     o.active_rom = [...(o.active_rom || []), ...moved.active_rom];
     o.pain_score = [...(o.pain_score || []), ...moved.pain_score];
     o.past_history = [...(o.past_history || []), ...moved.past_history];
@@ -1480,12 +1492,20 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
         ocrState(files.length > 1 ? `Reading the handwriting — photo ${n + 1} of ${files.length}…` : "Reading the handwriting…");
         const r = cleanPhotoReading(await askGemini(await photoToJpegBase64(files[n])));
         placed += placePhotoFields(r);
-        // the pain area and the complaint also go to the notes box, so the body region and the side are picked up
-        // the complaint goes to the notes box too, so the body region and the side are picked up; so does
-        // anything the reader could not place — nothing that was read is thrown away
-        const hintText = r.chief_complaint ? "Chief complaint: " + String(r.chief_complaint).split(/\n+/).slice(0, 2).join("; ") : "";
-        if (hintText) { const ta = $("transcript"); ta.value = (ta.value.replace(/\s+$/, "") ? ta.value.replace(/\s+$/, "") + "\n\n" : "") + "[From photo]\n" + hintText; ta.dispatchEvent(new Event("input")); if (!$("trbox").open) $("trbox").open = true; }
+        // The body region and the side come from what was read. Until draft 36 the complaint was pasted into the
+        // notes box to get them, but then the rules read it again and wrote a second copy of the complaint
+        // ("Pain at Lt. shoulder" under "Lt shoulder pain with limited ROM") — measured on 21 real charts,
+        // 2026-09-22. Read it here instead and leave the notes box for what the physio says.
+        const hintText = [r.chief_complaint, r.present_history].filter(Boolean).join("\n");
+        if (hintText) {
+          const d = DETECT.run(hintText, S.region);
+          if (d.side && !S.sideManual && d.side !== S.side) { setSide(d.side, true); S.sideAuto = true; }
+          if (d.region && !S.regionManual && d.region !== S.region) { S.region = d.region; $("region").value = d.region; renderBuilder(); prefillTests(); }
+        }
       }
+      // what the photo says is the note: a condition guessed from it must not add a treatment prescription,
+      // measurements or tests nobody wrote (owner + physio, 2026-09-21; seen again on the real charts)
+      S.photoRead = true; applyPack();
       // a test the physio wrote by hand ("-ve McMurray") makes the pre-listed empty line for it pointless
       const tidyTests = () => { const t = target("objective", "Special test");
       if (!(t && t[0] && S.prefilled)) return;
@@ -1547,7 +1567,7 @@ RULES
 - pain_score: every score that was said, with its area or activity when there is more than one ("Low back 7/10 on movement", "Lt. elbow 4/10"). Only scores really said.
 - muscle_power: what was tested and how, as said ("Isometric biceps curl Lt.: weak with pain", "Hip flexor Lt.: weak"). functional_test: the movements or tasks the physio watched (squat, sit to stand, single leg stance) with what was seen.
 - functional_limitation: what the patient cannot do or has trouble doing in daily life, work or sport because of the problem ("Pain on standing up after sitting", "Cannot continue squat training").
-- diagnosis: the clinical name only, the main problem first, one per line, six words at most, with the side when it has one ("Mechanical low back pain", "Lt. lateral epicondylitis"). No sentences, no contributing findings (they have their own sections), and what was ruled out is not a diagnosis.
+- diagnosis: ONLY a diagnosis the physio named or explained in the notes — if none was said, leave it "" (the physio decides the diagnosis, not you). The clinical name only, the main problem first, one per line, six words at most, with the side when it has one ("Mechanical low back pain", "Lt. lateral epicondylitis"). No sentences, no contributing findings (they have their own sections), and what was ruled out is not a diagnosis.
 - problem_list: only items from the PROBLEM LIST OPTIONS given at the end, copied exactly, that the findings support.
 - No names, phone numbers or other identifying details. Never "he/she": leave the subject out or write "Pt.".
 - One fact per line, each fact once, in the single best section.
@@ -1592,6 +1612,9 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   async function runSmart() {
     const text = $("transcript").value.trim();
     if (!text) { if ((S.aiLines || []).length) { retractSmart(); renderOutput(); } smart.last = ""; smartState(""); return; }
+    // the one-line hint a chart photo leaves in the notes box ("[From photo] Chief complaint: …") is not session notes:
+    // the photo has been read already, and a second read of its own summary would only repeat it
+    if (text.replace(/\[From photo\]\s*\n?Chief complaint:[^\n]*/g, "").trim().length < 40) return;
     if (text.length < 40 || smart.busy || text === smart.last || Date.now() < smart.quietUntil) return;
     // a few characters changed since the last read: not worth another read
     if (sameNotes(smart.last, text)) return;
@@ -1837,9 +1860,14 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   $("uselast").onclick = useLastNote;
   $("clearlast").onclick = () => { $("lastnote").value = ""; $("laststate").textContent = ""; };
   $("copy").onclick = copyNote;
-  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.packChips = {}; S.packLines = {}; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
+  $("clear").onclick = () => { if (!confirm("Clear the whole draft? Nothing was saved anyway.")) return; S.fields = {}; S.auto = {}; S.aiFor = ""; S.photoRead = false; S.aiLines = []; S.aiConds = []; S.moreConditions = []; smart.last = ""; smartState(""); S.regionManual = false; S.sideAuto = false; S.conditionGuess = false; S.regionFromCond = false; S.sideFromCond = false;
+    // the next patient is not the last patient: the region went with the draft, or the region's usual
+    // tests were never re-listed for them (found 2026-09-22 while checking draft 37)
+    S.region = "General / other"; $("region").value = S.region; S.packChips = {}; S.packLines = {}; S.ttSuffix = ""; S.condition = ""; S.conditionAuto = false; S.sideManual = false; S.showAll = false; S.prefilled = new Set(); renderCondTag(); setSide(""); $("lastnote").value = ""; $("laststate").textContent = ""; $("transcript").value = ""; $("tt").value = ""; $("patient").value = ""; $("dxq").value = ""; $("fillstate").textContent = ""; renderNums(); renderBuilder(); renderOutput(); renderDx(); };
   window.addEventListener("beforeunload", stopMic);
 
   renderBuilder(); renderOutput(); renderNums();
-  window.__bpcDebug = { regionForCondition, sideForCondition };   // read-only hooks for testing the condition -> region / side tables
+  // read-only hooks for testing: the condition -> region / side tables, and the photo/notes sorting
+  // (cleanPhotoReading + placePhotoFields replay a saved batch of readings without calling the reader again)
+  window.__bpcDebug = { regionForCondition, sideForCondition, cleanPhotoReading, placePhotoFields, val };
 })();
