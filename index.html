@@ -122,7 +122,7 @@
   .langs button.on { background:var(--navy); color:#fff; }
   .hint { color:var(--muted); font-size:0.78rem; }
 
-  .out { position:sticky; top:12px; }
+  .out { position:sticky; top:calc(var(--jumph, 52px) + 6px); }   /* clear of the sticky jump bar */
   pre.note { background:var(--cream); border:1px solid var(--line); border-radius:8px;
     padding:14px; margin:0; white-space:pre-wrap; word-break:break-word;
     font-family:ui-monospace,Consolas,'Noto Sans Thai',monospace; font-size:0.82rem; line-height:1.65;
@@ -148,6 +148,20 @@
   .nums { display:grid; gap:4px; font-size:0.84rem; }
   .nums b { color:var(--ink); }
   .nums span { color:var(--muted); }
+  /* jump bar — tap a section instead of scrolling for it (physio feedback 2026-09-22; phones first) */
+  .jump { position:sticky; top:0; z-index:30; margin:0 -16px 12px; padding:8px 16px;
+    background:rgba(254,253,251,0.95); border-bottom:1px solid var(--line);
+    display:flex; gap:6px; overflow-x:auto; overscroll-behavior-x:contain;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .jump::-webkit-scrollbar { display:none; }
+  .jump button { flex:none; border:1px solid var(--line); background:var(--card); color:var(--muted);
+    border-radius:999px; padding:7px 13px; font-size:0.8rem; font-weight:600; cursor:pointer;
+    white-space:nowrap; min-height:34px; }
+  .jump button.filled { border-color:var(--cyan); color:var(--cyan-deep); background:rgba(56,194,205,0.08); }
+  .jump button.here { background:var(--navy); border-color:var(--navy); color:#fff; }
+  /* a laptop has no thumb to swipe the strip with, so let it wrap there; phones keep one scrolling row */
+  @media (min-width:901px) { .jump { flex-wrap:wrap; overflow:visible; } }
+  .fld, .step, details.transcript { scroll-margin-top:calc(var(--jumph, 52px) + 8px); }
   .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
     background:var(--navy); color:#fff; padding:10px 16px; border-radius:999px; font-size:0.86rem;
     font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s; }
@@ -155,6 +169,11 @@
 
   @media (max-width:900px) {
     .wrap { padding:10px 12px 70px; }
+    .jump { margin:0 -12px 10px; padding:7px 12px; }
+    .out { top:0; }
+    /* "Both" was clipped at 375px: the side buttons get the full width of their own row */
+    .controls .field:nth-child(2) { grid-column:1 / -1; }
+    .sides button { padding:0 6px; }
     .controls { grid-template-columns:1fr 1fr; }
     .controls .field:first-child { grid-column:1 / -1; }
     .main { grid-template-columns:1fr; gap:14px; }
@@ -222,6 +241,8 @@
     </div>
   </details>
 
+  <nav class="jump" id="jump" aria-label="Jump to a section" hidden></nav>
+
   <div class="main">
     <section>
       <div class="step"><span class="n">2</span><h2>Build the note</h2></div>
@@ -239,10 +260,10 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
-<script src="vocab.js?v=37"></script>
-<script src="suggest.js?v=37"></script>
-<script src="lay.js?v=37"></script>
-<script src="detect.js?v=37"></script>
-<script src="app.js?v=37"></script>
+<script src="vocab.js?v=38"></script>
+<script src="suggest.js?v=38"></script>
+<script src="lay.js?v=38"></script>
+<script src="detect.js?v=38"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

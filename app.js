@@ -450,7 +450,7 @@
 
   // ---------- field textarea ----------
   function fieldBox(name, rows, placeholder, withMic) {
-    const w = document.createElement("div"); w.className = "fld";
+    const w = document.createElement("div"); w.className = "fld"; w.dataset.jump = name;
     const head = document.createElement("div"); head.className = "head";
     const b = document.createElement("b"); b.textContent = name; head.appendChild(b);
     if (withMic) {
@@ -471,7 +471,7 @@
   // tapping the same number again clears it. No mic, no textarea: this is
   // the "little tiny marker" the field actually is in a real chart.
   function painScaleBox() {
-    const w = document.createElement("div"); w.className = "fld";
+    const w = document.createElement("div"); w.className = "fld"; w.dataset.jump = "Pain scale";
     const head = document.createElement("div"); head.className = "head";
     const b = document.createElement("b"); b.textContent = "Pain scale"; head.appendChild(b);
     w.appendChild(head);
@@ -1020,6 +1020,70 @@
     if (V.POST_TREATMENT) { [d, b] = details("After treatment"); b.appendChild(chips(V.POST_TREATMENT, field, "")); host.appendChild(d); }
   }
 
+  // ---------- jump bar ----------
+  // A physio on a phone was scrolling the whole page to reach Palpation or Treatment (videos, 2026-09-21).
+  // One row of chips, sticky at the top: tap one and the page goes to that box. A chip is marked when its
+  // box has something in it, so what is still empty is visible without scrolling at all.
+  const SHORT_NAME = { "Chief complaint": "Complaint", "Chief Complaint": "Complaint", "Active range of motions": "Active ROM",
+    "Passive range of motions": "Passive ROM", "Neurological examination": "Neuro", "Physical examinations": "Findings",
+    "Physical Examinations": "Findings", "Physiotherapy Treatments": "Treatment", "Physician's recommendations": "Plan",
+    "Functional limitation": "Limitation", "Present history": "Present hx", "Past history": "Past hx" };
+  function jumpTo(el) {
+    if (!el) return;
+    for (let p = el.parentElement; p; p = p.parentElement) if (p.tagName === "DETAILS" && !p.open) p.open = true;
+    // plain, instant scroll: "smooth" is silently ignored by some browsers (measured 2026-09-22) and a
+    // tap that appears to do nothing is worse than a jump
+    el.scrollIntoView({ block: "start" });
+  }
+  function renderJump() {
+    const host = $("jump"); if (!host) return;
+    const boxes = [...document.querySelectorAll("#builder .fld[data-jump]")];
+    host.hidden = !boxes.length; host.innerHTML = "";
+    if (!boxes.length) return;
+    const add = (label, go) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = () => jumpTo(go()); host.appendChild(b); return b; };
+    add("↑ Notes", () => $("trbox"));
+    // look the box up when it is tapped, never hold the element: renderBuilder replaces these nodes
+    boxes.forEach((box) => {
+      const name = box.dataset.jump;
+      const b = add(SHORT_NAME[name] || name, () => document.querySelector(`#builder .fld[data-jump="${CSS.escape(name)}"]`));
+      b.dataset.field = name;
+    });
+    add("Copy →", () => $("sections"));
+    paintJump();
+    sizeJump();
+  }
+  // The bar is one scrolling row on a phone and wraps on a laptop, so everything that has to clear it
+  // (the scroll target of a tap, the sticky Copy panel) is sized from its real height, not a guess.
+  // Set straight away, never inside requestAnimationFrame: that does not fire while the tab is in the
+  // background, and the boxes would then land underneath the bar (measured 2026-09-22).
+  function sizeJump() {
+    const host = $("jump"); if (!host) return;
+    document.documentElement.style.setProperty("--jumph", (host.hidden ? 0 : host.offsetHeight) + "px");
+  }
+  addEventListener("resize", sizeJump);
+  // a chip is "filled" when its box has a real line in it — a pre-listed empty test does not count
+  function paintJump() {
+    document.querySelectorAll("#jump button[data-field]").forEach((b) => {
+      const lines = val(b.dataset.field).split("\n").map((l) => l.trim()).filter(Boolean);
+      b.classList.toggle("filled", lines.some((l) => !BLANK_TEST.test(l) && !HEADINGS.has(l)));
+    });
+  }
+  // highlight the section the physio is looking at, and keep its chip in view on a phone
+  let jumpTick = 0;
+  function markHere() {
+    const host = $("jump"); if (!host || host.hidden) return;
+    const boxes = [...document.querySelectorAll("#builder .fld[data-jump]")];
+    const top = host.getBoundingClientRect().bottom + 4;
+    let cur = null;
+    boxes.forEach((box) => { const r = box.getBoundingClientRect(); if (r.top <= top + 40) cur = box.dataset.jump; });
+    host.querySelectorAll("button").forEach((b) => b.classList.remove("here"));
+    if (!cur) return;
+    const b = host.querySelector(`button[data-field="${CSS.escape(cur)}"]`);
+    if (b) { b.classList.add("here"); const br = b.getBoundingClientRect(), hr = host.getBoundingClientRect();
+      if (br.left < hr.left + 8 || br.right > hr.right - 8) host.scrollLeft = b.offsetLeft - host.clientWidth / 2 + b.offsetWidth / 2; }
+  }
+  addEventListener("scroll", () => { if (jumpTick) return; jumpTick = requestAnimationFrame(() => { jumpTick = 0; markHere(); }); }, { passive: true });
+
   const CHIPS_FOR = {
     "Observation": () => profile().observation, "Palpation": () => V.PALPATION_FINDINGS,
     "Muscle power": () => V.STRENGTH, "PAIVMS": () => V.PAIVMS, "Functional test": () => profile().functional,
@@ -1037,6 +1101,7 @@
   function renderBuilder() {
     const host = $("builder"); host.innerHTML = ""; customSync.length = 0;
     setTimeout(renderSuggest, 0);
+    setTimeout(renderJump, 0);   // after the boxes exist
     const fmt = S.format;
     if (fmt === "SOAP with treatment") {
       host.appendChild(fieldBox("Subjective", 4, "What the patient reports — any language.", true));
@@ -1129,7 +1194,7 @@
     if (!any) host.innerHTML = '<div class="empty">Fill in the fields and each section appears here with its own Copy button — one for each box in Jane.</div>';
   }
   function renderOutput() {
-    renderSections();
+    renderSections(); paintJump();
     const note = buildNote(); const o = $("output"); const v = $("verdict");
     const who = ($("patient").value || "").trim();
     if (!note) { o.innerHTML = ""; v.innerHTML = ""; return; }
