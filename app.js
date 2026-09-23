@@ -1403,7 +1403,11 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
     // text/plain keeps this a "simple" request: Apps Script web apps do not answer CORS preflights
     try { res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ image: b64, prompt: AI_PROMPT, strict: true }), redirect: "follow" }); }
     catch { throw new Error("Could not reach the handwriting reader — check the internet connection"); }
-    if (!res.ok) throw new Error("The handwriting reader answered with an error (" + res.status + ")");
+    // Apps Script's /exec answers an occasional 404 or 5xx that has nothing to do with the request —
+    // the very next try succeeds (measured 2026-09-23, after a physio's photo failed with 404 while the
+    // relay was healthy and a 2 MB photo went through seconds later). Never give up on the first one.
+    if (!res.ok && (attempt || 0) < 2) { ocrState(`The handwriting reader did not answer (${res.status}) — trying again…`); await new Promise((r) => setTimeout(r, 4000)); return askRelay(b64, (attempt || 0) + 1); }
+    if (!res.ok) throw new Error("The handwriting reader answered with an error (" + res.status + ") — try Photo of chart again in a moment.");
     let j; try { j = await res.json(); } catch { throw new Error("The handwriting reader sent an answer this page could not use"); }
     if (relayBusy(j) && (attempt || 0) < 2) { ocrState("The handwriting reader is busy — trying the next one…"); await new Promise((r) => setTimeout(r, 5000)); return askRelay(b64, (attempt || 0) + 1); }
     // the good free model is sometimes "busy"; the weak one is never used for handwriting, so say so and let the physio try again
@@ -1585,9 +1589,10 @@ Return JSON only, with exactly these keys (all strings; separate lines with \\n;
       if (!$("trbox").open) $("trbox").open = true;
       const why = err.message || "The handwriting reader failed";
       toast(why);
-      if (err.busy) { ocrState(why); return; }   // the built-in reader cannot read handwriting: nothing useful to fall back to
-      await readPhotos(files, true);
-      ocrState(why + " — the photo was read with the built-in reader instead (printed text only).");
+      // No falling back to the built-in reader for a chart photo. It cannot read handwriting, so all it
+      // returns is the blank form's own printed labels ("If yes, you have reached the end of the survey"),
+      // which lands in the notes box as noise and is then read as if it were the session (seen 2026-09-23).
+      ocrState(why);
       return;
     } finally { btn.classList.remove("busy"); }
   }
@@ -1689,6 +1694,12 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
     try {
       const res = await fetch(AI_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, redirect: "follow",
         body: JSON.stringify({ notes: sent.slice(0, 60000), prompt: NOTES_PROMPT + "\n\nPROBLEM LIST OPTIONS: " + [...(V.IMPAIRMENTS || []), ...(V.PARTICIPATION_RESTRICTION || [])].join(" | ") }) });
+      // same occasional 404/5xx from Apps Script as the photo path: try again rather than losing the read
+      if (!res.ok) {
+        window.__bpcSmart = { at: new Date().toISOString(), http: res.status };
+        if (smart.tries < 2) { smart.tries++; smart.at = 0; smartState("The reader did not answer — trying again…"); clearTimeout(smart.timer); smart.timer = setTimeout(runSmart, 6000); return; }
+        smart.tries = 0; smart.quietUntil = Date.now() + 2 * 60000; smartState(""); return;
+      }
       const j = await res.json();
       window.__bpcSmart = { at: new Date().toISOString(), model: j.model || "", error: j.error || "", skipped: j.skipped || [] };   // for troubleshooting only
       if (!j.text) {
