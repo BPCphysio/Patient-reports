@@ -77,6 +77,9 @@
     // what is left of "Carry heavy things pain VAS 6/10" or "able to do 10 reps" once the number is gone says nothing
     // (owner, 2026-09-21: "able to do — I don't know what that means")
     if (/\b(?:vas|nrs|pain scale|pain score)\s*:?\s*$/i.test(t) || /^(?:un)?able to (?:do|perform)\b.{0,12}$/i.test(t.trim())) return false;
+    // "Knee flexion grade", "Hip adductor grade", "…Hamtring limit": the measurement word is left with nothing
+    // to measure once the physio's own number is gone
+    if (!/\d/.test(t) && /\b(grade|grades|limit|index|level|degree|degrees|score)\s*:?\s*$/i.test(t)) return false;
     return true;
   }
   const romLine = (m) => `${m}:`;
@@ -605,6 +608,7 @@
   // see (it reads body words and muscle names), so the guard below checks them too.
   const LEVEL_REGION = [[/\bc\s?(?:___|\d)/i, "Neck / cervical"], [/\bt\s?(?:___|\d{1,2})\b/i, "Thoracic spine"], [/\bl\s?(?:___|\d)|\bs\s?(?:___|[12])\b/i, "Trunk / lumbar"]];
   function packLineFitsRegion(line) {
+    if (wholeBodyLine(line)) return false;
     if (S.region === "General / other") return true;   // export already keeps region-free lines only in "p"
     const regs = DETECT.regionsOf ? DETECT.regionsOf(line) : new Set();
     LEVEL_REGION.forEach(([re, r]) => { if (re.test(line.replace(SIDE_TOKEN, " "))) regs.add(r); });
@@ -615,7 +619,11 @@
     if (/\bshoulder|\bscapul\w*/i.test(line)) regs.add("Shoulder");
     return !regs.size || regs.has(S.region);
   }
-  const packSide = (line) => noBlanks(withSide(line));
+  // chart lines often end mid-thought where the physio's own numbers followed ("…7 min/point,"): trim the
+  // dangling punctuation so the box does not show a line that reads as if something were missing
+  // "E:Tension release after treatment" — the physios' SOAP shorthand at the head of a chart line is noise
+  // in a box that is already labelled (owner, 2026-09-23). Single letter + colon only, so "Rt.:" is untouched.
+  const packSide = (line) => noBlanks(withSide(String(line).replace(/^\s*[A-Za-z]\s*:\s*/, ""))).replace(/[\s,;:+\-–—/]+$/, (m) => (/:/.test(m) ? ":" : ""));
   function applyPack() {
     // A condition's usual lines (what is normally observed, palpated, measured, tested) go into
     // the boxes so the physio sees the routine — but never with a ___ blank (owner, 2026-09-16:
@@ -641,8 +649,10 @@
       lines.forEach((raw) => {
         const line = packSide(raw); if (!line) return;
         if (fromCharts && !usableStub(line)) return;   // "LSI >", "Gr": nothing left once the numbers are gone
+        // whatever region the export filed it under, a line naming the whole body is not this patient's
+        if (wholeBodyLine(line)) return;
         if (!vetted && !packLineFitsRegion(withSide(raw))) return;
-        if ((wanted[t[0]] || []).some((w) => w.line.toLowerCase() === line.toLowerCase())) return;
+        if ((wanted[t[0]] || []).some((w) => sameLine(w.line, line))) return;
         (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" });
       });
     };
@@ -670,8 +680,13 @@
           const t = target(label === "Treatment" ? "treatment" : "objective", label); if (!t || !t[0]) return;
           const already = (wanted[t[0]] || []).some((w) => !t[1] || w.heading === t[1]);
           if (already) return;
-          const lines = (hit[1].s[label] || []).map(([line]) => noBlanks(withSide(String(line).replace(/^\s*\d+[.)]\s*/, "")))).filter((l) => usableStub(l) && !offRegion(l) && !/^dx:?\s/i.test(l)).slice(0, 3);
-          lines.forEach((line) => { if (!(wanted[t[0]] || []).some((w) => w.line.toLowerCase() === line.toLowerCase())) (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" }); });
+          // These are raw chart lines, and unlike the "p" pack their numbers were never blanked — so a grade,
+          // a degree or a centimetre in one is ANOTHER PATIENT'S measurement ("Knee flexion grade 5").
+          // Never put one in an assessment box. Treatment keeps its numbers: those are the clinic's own usual
+          // parameters, which the owner decided on 2026-09-06.
+          const lines = (hit[1].s[label] || []).map(([line]) => packSide(String(line).replace(/^\s*\d+[.)]\s*/, "")))
+            .filter((l) => usableStub(l) && !offRegion(l) && !/^dx:?\s/i.test(l) && (label === "Treatment" || !/\d/.test(l))).slice(0, 3);
+          lines.forEach((line) => { if (!(wanted[t[0]] || []).some((w) => sameLine(w.line, line))) (wanted[t[0]] = wanted[t[0]] || []).push({ line, heading: t[1] || "" }); });
         });
       }
     }
@@ -771,8 +786,26 @@
   }
   // Lines that already exist as standard options below the box are not repeated as suggestions.
   // a line about another part of the body has no place in this note (a neck case does not get the hamstrings)
+  // A chart line that lists four or more body parts is a whole-body session, not a finding about this
+  // patient: "Hot pack: คอ บ่า หลัง น่อง ไหล่ 2 ข้าง", "Release muscle (neck shoulder chest back hip thigh
+  // and calf)". Those came from charts where the physio treated everything, and the region guard let them
+  // through because one of the parts they name happens to be the region in play (owner, 2026-09-23:
+  // "how the **** has that got to do with MPS at the upper trapezius?").
+  const BODY_PARTS = [
+    /\bneck\b|คอ/i, /\b(shoulder|scapula\w*|trapezius)\b|ไหล่|บ่า|สะบัก/i, /\bchest\b|หน้าอก/i,
+    /\b(back|lumbar|thoracic|spine)\b|หลัง|เอว/i, /\b(hip|glute\w*|buttock)\b|สะโพก|ก้น/i,
+    /\b(thigh|quadriceps|hamstring)\b|ต้นขา/i, /\bcalf\b|น่อง/i, /\bknee\b|เข่า/i,
+    /\b(ankle|foot|feet|heel)\b|ข้อเท้า|เท้า|ส้นเท้า/i, /\b(arm|elbow)\b|แขน|ศอก/i,
+    /\b(wrist|hand|finger)\b|ข้อมือ|นิ้ว/i, /\bhead\b|ศีรษะ/i,
+  ];
+  const bodyPartCount = (t) => BODY_PARTS.reduce((n, re) => n + (re.test(t) ? 1 : 0), 0);
+  // the same line twice in the clinic's own charts, once with a typo ("After treatment no complication" /
+  // "after treat ment no complication"): compare with the spaces and punctuation taken out
+  const sameLine = (a, b) => String(a).toLowerCase().replace(/[^a-z0-9ก-๙]/g, "") === String(b).toLowerCase().replace(/[^a-z0-9ก-๙]/g, "");
+  const wholeBodyLine = (t) => !isGeneral() && bodyPartCount(t) >= 4;
   function offRegion(text) {
     if (isGeneral() || !DETECT.regionsOf) return false;
+    if (wholeBodyLine(text)) return true;
     const regs = DETECT.regionsOf(text); if (!regs.size) return false;
     if (regs.has(S.region)) return false;
     const NEAR = { "Neck / cervical": ["Shoulder", "Thoracic spine"], "Shoulder": ["Neck / cervical", "Thoracic spine"], "Thoracic spine": ["Neck / cervical", "Shoulder", "Trunk / lumbar"], "Trunk / lumbar": ["Hip", "Thoracic spine"], "Hip": ["Trunk / lumbar", "Knee"], "Knee": ["Hip", "Ankle & foot"], "Ankle & foot": ["Knee"], "Elbow, wrist & hand": ["Shoulder"] };
@@ -1866,6 +1899,16 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   const SG_NAME = {};   // shown name -> suggest.js key
   const CHART_DX = SG ? Object.entries(SG.conditions).map(([k, v]) => [dxDisplay(k), k, v.n]).filter(([d]) => d.length >= 3) : [];
   CHART_DX.forEach(([d, k]) => { SG_NAME[d.toLowerCase()] = k; });
+  // The crawl of the clinic's charts scraped a diagnosis field that physios also use as a scratch pad, so the
+  // condition list carries 54 entries that are not conditions: a bare side ("Left", "Right", "Both", "N/a"),
+  // force-plate printouts ("May: 293, 312, 363 n → avg ≈ 323 n", "👉 +35 n improvement", "30%=46.95mmhg"),
+  // and notes to self ("** need more investigation; MRI, x-rays"). Typing "left" offered "Left" as a
+  // diagnosis. They are hidden from the search here rather than regenerated, because the tally that built
+  // suggest.js is not in the repo (found by the 2026-09-23 sweep of all 2,496 names).
+  // …and 117 more are a sentence of analysis, not a diagnosis ("Due to the exercise make the muscle tensions",
+  // "Knee ROM acully better, still need to work on his strength") — one physio's habit of writing prose there.
+  const JUNK_DX = /[👉✅→≈]|^\s*(?:left|right|both|lt\.?|rt\.?|yes|no|n\/a|nil|none|-+)\s*$|avg\b|\bimprovement\b|^\s*\d+\s*[.)%]|=\s*\d|\bmmhg\b|^\s*\*{2,}|need more investigation|^\s*due to\b|\bmake the\b|\b(?:her|his|she|he|they|them)\b|\bgetting (?:better|worse)\b|\bfeels?\b|\bcomplain/i;
+  const junkCondition = (d) => JUNK_DX.test(String(d).trim());
   function renderDx() {
     const q = ($("dxq").value || "").trim().toLowerCase(); const host = $("dxhits"); host.innerHTML = "";
     if (!q) return;
@@ -1875,7 +1918,7 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
     const addHit = (d, n) => { const l = d.toLowerCase(); if (seen.has(l)) return; seen.add(l); hits.push([d, n]); };
     // the library first (a name that starts with what was typed before one that merely contains it), then the clinic's charts by how often they wrote it
     ALL_DX.filter(matches).sort((x, y) => (y.toLowerCase().startsWith(q) ? 1 : 0) - (x.toLowerCase().startsWith(q) ? 1 : 0)).forEach((d) => addHit(d, 0));
-    CHART_DX.filter(([d]) => matches(d)).sort((x, y) => y[2] - x[2]).forEach(([d, k, n]) => addHit(d, n));
+    CHART_DX.filter(([d]) => matches(d) && !junkCondition(d)).sort((x, y) => y[2] - x[2]).forEach(([d, k, n]) => addHit(d, n));
     const target = S.format === "SOAP with treatment" ? "Analysis" : "Diagnosis";
     if (!hits.length) { host.innerHTML = `<span class="hint">Not in the library — type it straight into ${target}. That is always allowed.</span>`; return; }
     hits.slice(0, 14).forEach(([h, n]) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = h; if (n) b.title = `Written in ${n} BPC charts`; b.onclick = () => { setCondition(h); $("dxq").value = ""; renderDx(); }; host.appendChild(b); });
@@ -1945,5 +1988,7 @@ Return JSON only, with exactly these keys (strings; lines separated by \\n; "" w
   renderBuilder(); renderOutput(); renderNums();
   // read-only hooks for testing: the condition -> region / side tables, and the photo/notes sorting
   // (cleanPhotoReading + placePhotoFields replay a saved batch of readings without calling the reader again)
-  window.__bpcDebug = { regionForCondition, sideForCondition, cleanPhotoReading, placePhotoFields, val };
+  window.__bpcDebug = { regionForCondition, sideForCondition, cleanPhotoReading, placePhotoFields, val, setCondition, clearCondition,
+    conditionNames: () => (SG ? Object.keys(SG.conditions).map(dxDisplay) : []),
+    fields: () => Object.fromEntries([...document.querySelectorAll("#builder textarea[data-field]")].filter((t) => t.value.trim()).map((t) => [t.dataset.field, t.value])) };
 })();
